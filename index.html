@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCFL Network — Pure College Football League</title>
+<meta name="description" content="PCFL Network: scores, rankings, standings, stats, rosters and full broadcast replays from the Pure College Football League.">
+<meta property="og:title" content="PCFL Network — Pure College Football League">
+<meta property="og:description" content="The home of PCFL football. Scores, power polls, stats and broadcasts.">
+<meta property="og:image" content="assets/brand/pcfl-logo.png">
+<link rel="icon" type="image/png" href="assets/brand/pcfl-logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap">
+    <span style="display:inline-flex;align-items:center;gap:6px"><span class="live-dot"></span> PCFL NETWORK</span>
+    <span class="spacer"></span>
+    <a href="https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA" target="_blank" rel="noopener">▶ Watch on YouTube</a>
+    <a href="#/media">Media Center</a>
+  </div>
+</div>
+
+<header class="main">
+  <div class="wrap">
+    <a class="brand" href="#/">
+      <img src="assets/brand/pcfl-logo-animated.gif" alt="PCFL logo">
+      <span class="word"><b>PCFL<em>.</em></b><span>Pure College Football League</span></span>
+    </a>
+    <nav class="primary">
+      <a href="#/scores" data-route="scores">Scores</a>
+      <a href="#/rankings" data-route="rankings">Rankings</a>
+      <a href="#/standings" data-route="standings">Standings</a>
+      <a href="#/teams" data-route="teams">Teams</a>
+      <a href="#/schedule" data-route="schedule">Schedule</a>
+      <a href="#/stats" data-route="stats">Stats</a>
+      <a href="#/awards" data-route="awards">Awards</a>
+      <a href="#/media" data-route="media">Media</a>
+      <a href="#/history" data-route="history">History</a>
+    </nav>
+    <div class="wk-select">
+      <label>Season</label><select id="season-sel"></select>
+      <label>Week</label><select id="week-sel"></select>
+    </div>
+  </div>
+</header>
+
+<div class="ticker"><div class="ticker-track" id="ticker-track"></div></div>
+
+<main id="view">
+  <div class="view wrap"><div class="empty"><b>Loading PCFL Network…</b></div></div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fbrand">
+      <img src="assets/brand/pcfl-logo-animated.gif" alt="">
+      <div><b>PCFL<span style="color:var(--red)">.</span>NETWORK</b><span>Pure College Football League</span></div>
+    </div>
+    <nav>
+      <a href="#/scores">Scores</a><a href="#/rankings">Rankings</a><a href="#/standings">Standings</a>
+      <a href="#/teams">Teams</a><a href="#/schedule">Schedule</a><a href="#/stats">Stats</a>
+      <a href="#/awards">Awards</a><a href="#/media">Media</a><a href="#/history">History</a>
+    </nav>
+    <div class="copy">A Pure College Football League production · Powered by the FBPro98 simulation engine · All data generated from official league exports.
+      This is a simulation league; team marks are used in tribute to the programs they represent.</div>
+  </div>
+</footer>
+
+<script src="js/app.js"></script>
+</body>
+</html>

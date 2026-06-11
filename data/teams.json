@@ -1,0 +1,303 @@
+[
+ {
+  "slug": "washington",
+  "name": "Washington",
+  "nickname": "Huskies",
+  "abbr": "UW",
+  "colors": {
+   "primary": "#4B2E83",
+   "secondary": "#B7A57A"
+  },
+  "conference": "Western",
+  "division": "Pacific",
+  "aliases": [
+   "WASHINGTON",
+   "UW",
+   "WASH",
+   "WAS"
+  ]
+ },
+ {
+  "slug": "usc",
+  "name": "USC",
+  "nickname": "Trojans",
+  "abbr": "USC",
+  "colors": {
+   "primary": "#990000",
+   "secondary": "#FFCC00"
+  },
+  "conference": "Western",
+  "division": "Pacific",
+  "aliases": [
+   "USC",
+   "USC"
+  ]
+ },
+ {
+  "slug": "ucla",
+  "name": "UCLA",
+  "nickname": "Bruins",
+  "abbr": "UCLA",
+  "colors": {
+   "primary": "#2D68C4",
+   "secondary": "#F2A900"
+  },
+  "conference": "Western",
+  "division": "Pacific",
+  "aliases": [
+   "UCLA",
+   "UCLA",
+   "UCL"
+  ]
+ },
+ {
+  "slug": "oregon",
+  "name": "Oregon",
+  "nickname": "Ducks",
+  "abbr": "UO",
+  "colors": {
+   "primary": "#154733",
+   "secondary": "#FEE123"
+  },
+  "conference": "Western",
+  "division": "Pacific",
+  "aliases": [
+   "OREGON",
+   "UO",
+   "ORE",
+   "OR"
+  ]
+ },
+ {
+  "slug": "ohio-state",
+  "name": "Ohio State",
+  "nickname": "Buckeyes",
+  "abbr": "OSU",
+  "colors": {
+   "primary": "#BB0000",
+   "secondary": "#A7B1B7"
+  },
+  "conference": "Western",
+  "division": "Central",
+  "aliases": [
+   "OHIO STATE",
+   "OSU"
+  ]
+ },
+ {
+  "slug": "notre-dame",
+  "name": "Notre Dame",
+  "nickname": "Fighting Irish",
+  "abbr": "ND",
+  "colors": {
+   "primary": "#0C2340",
+   "secondary": "#C99700"
+  },
+  "conference": "Western",
+  "division": "Central",
+  "aliases": [
+   "NOTRE DAME",
+   "ND"
+  ]
+ },
+ {
+  "slug": "colorado",
+  "name": "Colorado",
+  "nickname": "Buffaloes",
+  "abbr": "COL",
+  "colors": {
+   "primary": "#CFB87C",
+   "secondary": "#000000"
+  },
+  "conference": "Western",
+  "division": "Central",
+  "aliases": [
+   "COLORADO",
+   "COL",
+   "COLO"
+  ]
+ },
+ {
+  "slug": "oklahoma",
+  "name": "Oklahoma",
+  "nickname": "Sooners",
+  "abbr": "OU",
+  "colors": {
+   "primary": "#841617",
+   "secondary": "#FDF9D8"
+  },
+  "conference": "Western",
+  "division": "Central",
+  "aliases": [
+   "OKLAHOMA",
+   "OU",
+   "OKL"
+  ]
+ },
+ {
+  "slug": "michigan",
+  "name": "Michigan",
+  "nickname": "Wolverines",
+  "abbr": "MICH",
+  "colors": {
+   "primary": "#00274C",
+   "secondary": "#FFCB05"
+  },
+  "conference": "Western",
+  "division": "Central",
+  "aliases": [
+   "MICHIGAN",
+   "MICH",
+   "MIC"
+  ]
+ },
+ {
+  "slug": "texas",
+  "name": "Texas",
+  "nickname": "Longhorns",
+  "abbr": "TEX",
+  "colors": {
+   "primary": "#BF5700",
+   "secondary": "#FFFFFF"
+  },
+  "conference": "Eastern",
+  "division": "Atlantic",
+  "aliases": [
+   "TEXAS",
+   "TEX"
+  ]
+ },
+ {
+  "slug": "penn-state",
+  "name": "Penn State",
+  "nickname": "Nittany Lions",
+  "abbr": "PSU",
+  "colors": {
+   "primary": "#041E42",
+   "secondary": "#FFFFFF"
+  },
+  "conference": "Eastern",
+  "division": "Atlantic",
+  "aliases": [
+   "PENN STATE",
+   "PSU",
+   "PENNST",
+   "PENN ST"
+  ]
+ },
+ {
+  "slug": "boston-college",
+  "name": "Boston College",
+  "nickname": "Eagles",
+  "abbr": "BC",
+  "colors": {
+   "primary": "#98002E",
+   "secondary": "#BC9B6A"
+  },
+  "conference": "Eastern",
+  "division": "Atlantic",
+  "aliases": [
+   "BOSTON COLLEGE",
+   "BC",
+   "BOSTON COLLEG"
+  ]
+ },
+ {
+  "slug": "clemson",
+  "name": "Clemson",
+  "nickname": "Tigers",
+  "abbr": "CLEM",
+  "colors": {
+   "primary": "#F56600",
+   "secondary": "#522D80"
+  },
+  "conference": "Eastern",
+  "division": "Atlantic",
+  "aliases": [
+   "CLEMSON",
+   "CLEM",
+   "CLE"
+  ]
+ },
+ {
+  "slug": "lsu",
+  "name": "LSU",
+  "nickname": "Tigers",
+  "abbr": "LSU",
+  "colors": {
+   "primary": "#461D7C",
+   "secondary": "#FDD023"
+  },
+  "conference": "Eastern",
+  "division": "Southern",
+  "aliases": [
+   "LSU",
+   "LSU"
+  ]
+ },
+ {
+  "slug": "tennessee",
+  "name": "Tennessee",
+  "nickname": "Volunteers",
+  "abbr": "TENN",
+  "colors": {
+   "primary": "#FF8200",
+   "secondary": "#58595B"
+  },
+  "conference": "Eastern",
+  "division": "Southern",
+  "aliases": [
+   "TENNESSEE",
+   "TENN",
+   "TEN"
+  ]
+ },
+ {
+  "slug": "arkansas",
+  "name": "Arkansas",
+  "nickname": "Razorbacks",
+  "abbr": "ARK",
+  "colors": {
+   "primary": "#9D2235",
+   "secondary": "#FFFFFF"
+  },
+  "conference": "Eastern",
+  "division": "Southern",
+  "aliases": [
+   "ARKANSAS",
+   "ARK"
+  ]
+ },
+ {
+  "slug": "georgia",
+  "name": "Georgia",
+  "nickname": "Bulldogs",
+  "abbr": "UGA",
+  "colors": {
+   "primary": "#BA0C2F",
+   "secondary": "#000000"
+  },
+  "conference": "Eastern",
+  "division": "Southern",
+  "aliases": [
+   "GEORGIA",
+   "UGA"
+  ]
+ },
+ {
+  "slug": "miami",
+  "name": "Miami",
+  "nickname": "Hurricanes",
+  "abbr": "MIA",
+  "colors": {
+   "primary": "#F47321",
+   "secondary": "#005030"
+  },
+  "conference": "Eastern",
+  "division": "Southern",
+  "aliases": [
+   "MIAMI",
+   "MIA"
+  ]
+ }
+]

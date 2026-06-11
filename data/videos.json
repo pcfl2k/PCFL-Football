@@ -1,0 +1,152 @@
+[
+ {
+  "id": "nsMq8wXJmSU",
+  "title": "28W02ARK@ND",
+  "published": "2026-06-07T08:52:24+00:00",
+  "season": 2028,
+  "week": 2,
+  "away": "arkansas",
+  "home": "notre-dame",
+  "rev": 1
+ },
+ {
+  "id": "ox7Zq_5LXTI",
+  "title": "28W02UCLA@MICH",
+  "published": "2026-06-07T08:52:02+00:00",
+  "season": 2028,
+  "week": 2,
+  "away": "ucla",
+  "home": "michigan",
+  "rev": 1
+ },
+ {
+  "id": "i6d2Yy_w0Ec",
+  "title": "28W02MIA@WASH",
+  "published": "2026-06-07T08:51:47+00:00",
+  "season": 2028,
+  "week": 2,
+  "away": "miami",
+  "home": "washington",
+  "rev": 1
+ },
+ {
+  "id": "LmF6JgAlnQQ",
+  "title": "28W02CLEM@BC",
+  "published": "2026-06-07T08:51:28+00:00",
+  "season": 2028,
+  "week": 2,
+  "away": "clemson",
+  "home": "boston-college",
+  "rev": 1
+ },
+ {
+  "id": "XpjLeZf1KA4",
+  "title": "28W02OSU@TEX",
+  "published": "2026-06-07T08:51:13+00:00",
+  "season": 2028,
+  "week": 2,
+  "away": "ohio-state",
+  "home": "texas",
+  "rev": 1
+ },
+ {
+  "id": "Rk0YymoZ_KA",
+  "title": "28W02TENN@PENNST",
+  "published": "2026-06-07T08:50:54+00:00",
+  "season": 2028,
+  "week": 2,
+  "away": "tennessee",
+  "home": "penn-state",
+  "rev": 1
+ },
+ {
+  "id": "z4PFaIWX0rk",
+  "title": "28W01ND@UCLA2",
+  "published": "2026-05-31T20:20:56+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "notre-dame",
+  "home": "ucla",
+  "rev": 2
+ },
+ {
+  "id": "7gBDScEz0UM",
+  "title": "28W01ND@UCLA",
+  "published": "2026-05-31T01:37:53+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "notre-dame",
+  "home": "ucla",
+  "rev": 1
+ },
+ {
+  "id": "s9KyEQJBBKY",
+  "title": "28W01OKL@WASH",
+  "published": "2026-05-31T01:37:31+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "oklahoma",
+  "home": "washington",
+  "rev": 1
+ },
+ {
+  "id": "bj71NK43tFo",
+  "title": "28W01MICH@OSU",
+  "published": "2026-05-31T00:47:38+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "michigan",
+  "home": "ohio-state",
+  "rev": 1
+ },
+ {
+  "id": "5M_pKBUQk1I",
+  "title": "28W01BC@ARK",
+  "published": "2026-05-30T05:27:07+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "boston-college",
+  "home": "arkansas",
+  "rev": 1
+ },
+ {
+  "id": "C8EvRszV54Y",
+  "title": "28W01CLEM@TENN",
+  "published": "2026-05-30T05:26:46+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "clemson",
+  "home": "tennessee",
+  "rev": 1
+ },
+ {
+  "id": "uIf57IfCPBA",
+  "title": "28W01TEX@UGA",
+  "published": "2026-05-30T05:26:14+00:00",
+  "season": 2028,
+  "week": 1,
+  "away": "texas",
+  "home": "georgia",
+  "rev": 1
+ },
+ {
+  "id": "iepYu--Xtn8",
+  "title": "27W13MIA@UCLA",
+  "published": "2026-03-01T01:25:42+00:00",
+  "season": 2027,
+  "week": 13,
+  "away": "miami",
+  "home": "ucla",
+  "rev": 1
+ },
+ {
+  "id": "IpBtc5R7GUI",
+  "title": "27W13MICH@OSU",
+  "published": "2026-03-01T01:25:38+00:00",
+  "season": 2027,
+  "week": 13,
+  "away": "michigan",
+  "home": "ohio-state",
+  "rev": 1
+ }
+]

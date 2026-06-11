@@ -1,0 +1,60 @@
+name: PCFL Weekly Update & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Refresh PCFL Network video feed
+        continue-on-error: true
+        run: |
+          curl -sf "https://www.youtube.com/feeds/videos.xml?channel_id=UCCopjecFoHzlVp99e-3W2yA" -o scripts/yt-feed.xml.new
+          if [ -s scripts/yt-feed.xml.new ]; then mv scripts/yt-feed.xml.new scripts/yt-feed.xml; fi
+
+      - name: Parse FBPro98 exports -> JSON
+        run: node scripts/parse-fbpro.mjs
+
+      - name: Commit regenerated data
+        run: |
+          git config user.name "pcfl-bot"
+          git config user.email "actions@github.com"
+          git add data scripts/yt-feed.xml
+          git diff --cached --quiet || git commit -m "data: regenerate weekly JSON [bot]"
+          git push
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
