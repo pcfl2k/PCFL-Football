@@ -62,6 +62,32 @@ assets/logos          team logos (light + dark variants, stored locally)
 assets/brand          PCFL logo assets
 ```
 
+## Environments: staging → production
+
+| Environment | Branch | URL |
+|---|---|---|
+| **Production** | `main` | https://pcfl2k.github.io/PCFL-Football/ |
+| **Staging** | `staging` | https://pcfl2k.github.io/PCFL-Football/staging/ |
+
+Both are built and deployed together by the same workflow. The staging build shows a
+gold **STAGING** ribbon so it can never be confused with production.
+
+Iterating on the site (design/code changes — not weekly data drops):
+
+```powershell
+git checkout staging
+# ...make changes...
+git commit -am "describe the change"
+git push origin staging          # deploys to /staging/ only
+# verify at https://pcfl2k.github.io/PCFL-Football/staging/
+git checkout main
+git merge staging
+git push origin main             # promotes to production
+```
+
+Weekly data drops via `Publish-PCFLWeek.ps1` go straight to `main` (production),
+since they are league results, not site changes.
+
 ## Local development
 
 ```powershell

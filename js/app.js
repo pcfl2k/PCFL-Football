@@ -91,9 +91,9 @@ function gameCard(g, wk, ranks){
   const win = g.away.score > g.home.score ? 'away' : 'home';
   const row = side => {
     const t = T(g[side].team);
-    return `<div class="trow ${side===win?'win':'lose'}">
+    return `<a class="trow ${side===win?'win':'lose'}" href="#/teams/${g[side].team}" title="${esc(t.name)} team page">
       <img src="${logo(g[side].team)}" alt=""><span class="nm">${rankChip(ranks,g[side].team)}${esc(t.name)}</span>
-      <span class="rec">(${wk.records[g[side].team]||'0-0'})</span><span class="sc">${g[side].score}</span></div>`;
+      <span class="rec">(${wk.records[g[side].team]||'0-0'})</span><span class="sc">${g[side].score}</span></a>`;
   };
   return `<div class="card gcard reveal">
     <div class="top"><span>${fmtDate(wk.date)}</span><span class="final">Final</span></div>
@@ -185,20 +185,20 @@ VIEWS.home = async function(){
       <div class="bg"></div><div class="grid-lines"></div><div class="sheen"></div>
       <div class="chyron"><span class="dot"></span> PCFL Network · Game of the Week · Week ${wk.week}</div>
       <div class="hero-inner">
-        <div class="side">
+        <a class="side" href="#/teams/${hero.away.team}">
           <img src="${logo(hero.away.team,true)}" onerror="this.src='${logo(hero.away.team)}'" alt="">
           <div><div class="tname">${esc(A.name)}</div><div class="tsub">${rankChip(ranks,hero.away.team)}${esc(A.nickname)} · ${wk.records[hero.away.team]||''}</div></div>
-        </div>
+        </a>
         <div class="mid"><div class="status">Final</div>
           <div class="scores">
             <span class="score ${win==='away'?'':'dim'}" data-count="${hero.away.score}">0</span>
             <span class="dash">–</span>
             <span class="score" data-count="${hero.home.score}">0</span>
           </div></div>
-        <div class="side right">
+        <a class="side right" href="#/teams/${hero.home.team}">
           <img src="${logo(hero.home.team,true)}" onerror="this.src='${logo(hero.home.team)}'" alt="">
           <div><div class="tname">${esc(H.name)}</div><div class="tsub">${rankChip(ranks,hero.home.team)}${esc(H.nickname)} · ${wk.records[hero.home.team]||''}</div></div>
-        </div>
+        </a>
       </div>
       <div class="hero-actions">
         ${hero.videoId ? `<a class="btn primary" href="#/game/${wk.season}/${wk.week}/${hero.id}?t=video">▶ Watch Replay</a>` : ''}
@@ -327,8 +327,8 @@ VIEWS.game = async function(season, week, id, q){
     recap: `<div class="card recap-card reveal in"><div class="cat" style="color:var(--red);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">PCFL Network · Game Recap</div>
       <h2>${esc(g.story.headline)}</h2>${g.story.body.map(p=>`<p>${esc(p)}</p>`).join('')}</div>`,
     box: `<div class="card reveal in"><div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-      <div style="border-right:1px solid var(--line)"><div style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></div>${boxSide('away')}</div>
-      <div><div style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.home.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(H.name)}</b></div>${boxSide('home')}</div>
+      <div style="border-right:1px solid var(--line)"><a href="#/teams/${g.away.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></a>${boxSide('away')}</div>
+      <div><a href="#/teams/${g.home.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.home.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(H.name)}</b></a>${boxSide('home')}</div>
     </div></div>`,
     stats: `<div class="card reveal in">${fullStats}</div>`,
   };
@@ -338,12 +338,12 @@ VIEWS.game = async function(season, week, id, q){
       <div class="bg"></div><div class="grid-lines"></div><div class="sheen"></div>
       <div class="chyron"><span class="dot"></span> Final · Week ${wk.week} · ${fmtDate(wk.date)}</div>
       <div class="hero-inner">
-        <div class="side"><img src="${logo(g.away.team,true)}" onerror="this.src='${logo(g.away.team)}'" alt="">
-          <div><div class="tname">${esc(A.name)}</div><div class="tsub">${rankChip(ranks,g.away.team)}${esc(A.nickname)} · ${wk.records[g.away.team]||''}</div></div></div>
+        <a class="side" href="#/teams/${g.away.team}"><img src="${logo(g.away.team,true)}" onerror="this.src='${logo(g.away.team)}'" alt="">
+          <div><div class="tname">${esc(A.name)}</div><div class="tsub">${rankChip(ranks,g.away.team)}${esc(A.nickname)} · ${wk.records[g.away.team]||''}</div></div></a>
         <div class="mid"><div class="status">Final</div><div class="scores">
           <span class="score" data-count="${g.away.score}">0</span><span class="dash">–</span><span class="score" data-count="${g.home.score}">0</span></div></div>
-        <div class="side right"><img src="${logo(g.home.team,true)}" onerror="this.src='${logo(g.home.team)}'" alt="">
-          <div><div class="tname">${esc(H.name)}</div><div class="tsub">${rankChip(ranks,g.home.team)}${esc(H.nickname)} · ${wk.records[g.home.team]||''}</div></div></div>
+        <a class="side right" href="#/teams/${g.home.team}"><img src="${logo(g.home.team,true)}" onerror="this.src='${logo(g.home.team)}'" alt="">
+          <div><div class="tname">${esc(H.name)}</div><div class="tsub">${rankChip(ranks,g.home.team)}${esc(H.nickname)} · ${wk.records[g.home.team]||''}</div></div></a>
       </div></div>
     ${g.playerOfGame ? `<div class="pog-strip reveal" style="margin-top:18px">
       <img src="${logo(g.playerOfGame.team)}" alt="">
@@ -705,6 +705,13 @@ async function route(){
 
 /* ============================= boot ============================== */
 async function boot(){
+  // staging environment indicator
+  if (/\/staging(\/|$)/.test(location.pathname)){
+    document.body.insertAdjacentHTML('beforeend',
+      `<div class="staging-ribbon">Staging</div>
+       <a class="staging-note" href="https://pcfl2k.github.io/PCFL-Football/" title="Go to production site">⚠ Staging preview — not production</a>`);
+    document.title = '[STAGING] ' + document.title;
+  }
   const [manifest, teams, videos] = await Promise.all([
     getJSON('data/manifest.json'), getJSON('data/teams.json'), getJSON('data/videos.json'),
   ]);

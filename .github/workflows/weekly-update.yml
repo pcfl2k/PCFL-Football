@@ -1,8 +1,13 @@
-name: PCFL Weekly Update & Deploy
+name: PCFL Build & Deploy (production + staging)
+
+# One Pages deployment carries both environments:
+#   production  <- main branch     -> https://pcfl2k.github.io/PCFL-Football/
+#   staging     <- staging branch  -> https://pcfl2k.github.io/PCFL-Football/staging/
+# Iterate on `staging`, verify at /staging/, then merge staging -> main to promote.
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   workflow_dispatch:
 
 permissions:
@@ -18,8 +23,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout production (main)
         uses: actions/checkout@v4
+        with:
+          ref: main
+          path: prod
+
+      - name: Checkout staging
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          path: staging
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,13 +43,21 @@ jobs:
       - name: Refresh PCFL Network video feed
         continue-on-error: true
         run: |
-          curl -sf "https://www.youtube.com/feeds/videos.xml?channel_id=UCCopjecFoHzlVp99e-3W2yA" -o scripts/yt-feed.xml.new
-          if [ -s scripts/yt-feed.xml.new ]; then mv scripts/yt-feed.xml.new scripts/yt-feed.xml; fi
+          curl -sf "https://www.youtube.com/feeds/videos.xml?channel_id=UCCopjecFoHzlVp99e-3W2yA" -o feed.xml
+          if [ -s feed.xml ]; then
+            cp feed.xml prod/scripts/yt-feed.xml
+            cp feed.xml staging/scripts/yt-feed.xml
+          fi
 
-      - name: Parse FBPro98 exports -> JSON
-        run: node scripts/parse-fbpro.mjs
+      - name: Parse FBPro98 exports (production)
+        run: node prod/scripts/parse-fbpro.mjs
 
-      - name: Commit regenerated data
+      - name: Parse FBPro98 exports (staging)
+        run: node staging/scripts/parse-fbpro.mjs
+
+      - name: Commit regenerated production data
+        if: github.ref == 'refs/heads/main'
+        working-directory: prod
         run: |
           git config user.name "pcfl-bot"
           git config user.email "actions@github.com"
@@ -43,10 +65,19 @@ jobs:
           git diff --cached --quiet || git commit -m "data: regenerate weekly JSON [bot]"
           git push
 
+      - name: Assemble combined site (prod at root, staging under /staging/)
+        run: |
+          mkdir site
+          cp -r prod/. site/
+          mkdir -p site/staging
+          cp -r staging/. site/staging/
+          rm -rf site/.git site/.github site/staging/.git site/staging/.github site/staging/drops
+          touch site/.nojekyll
+
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: site
 
   deploy:
     needs: build
