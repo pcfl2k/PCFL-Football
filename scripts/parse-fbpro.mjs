@@ -341,27 +341,38 @@ function fixName(n){
 /* Rosters parser                                                      */
 /* ------------------------------------------------------------------ */
 function parseRosters(html){
+  // Each player spans two lines: line 1 = bio + 8 ACTUAL ratings (SP AC AG ST HA EN IN DI),
+  // line 2 = the same 8 attributes as POTENTIAL ratings (indented, numbers only).
   const lines = html.split('\n');
   const rosters = {};
-  let cur = null;
+  let cur = null, last = null;
   for (const raw of lines){
     const tm = raw.match(/Team Roster:\s*([^<]+)/i);
     if (tm){
       const slug = teamFrom(tm[1].trim());
       cur = slug ? (rosters[slug] = []) : null;
+      last = null;
       continue;
     }
-    if (/Free Agent Draft Pool/i.test(raw)) cur = null;
+    if (/Free Agent Draft Pool/i.test(raw)){ cur = null; last = null; }
     if (!cur) continue;
     const txt = strip(raw);
-    const m = txt.match(/^(A|O|I|IR)\s+([A-Z]{1,2}\d*)\s+(\d+)\s+(.{1,22}?)\s{2,}(OK|P|Q|D|O|IR|\S+)\s+([R1-4])\s+(\d+-\d+)\s+(\d+)\s+((?:\d+\s+){7}\d+)/);
+    const pot = txt.match(/^\s{30,}((?:\d+\s+){7}\d+)\s*$/);
+    if (pot && last){
+      last.p = pot[1].trim().split(/\s+/).map(Number);
+      last = null;
+      continue;
+    }
+    const m = txt.match(/^([A-Z]{1,2})\s+([A-Z]{1,2}\d*)\s+(\d+)\s+(.{1,22}?)\s{2,}(\S+)\s+([R0-9])\s+(\d+-\d+)\s+(\d+)\s+((?:\d+\s+){7}\d+)\s*$/);
     if (m){
-      const ratings = m[9].trim().split(/\s+/).map(Number);
-      cur.push({
+      const a = m[9].trim().split(/\s+/).map(Number);
+      last = {
         status: m[1], pos: m[2].replace(/\d+$/,''), depth: +(m[2].match(/\d+$/)?.[0] ?? 0) || null,
         num: +m[3], name: m[4].trim(), inj: m[5], yr: m[6], ht: m[7], wt: +m[8],
-        ovr: Math.round(ratings.reduce((a,b)=>a+b,0)/ratings.length),
-      });
+        a, p: [...a],
+        ovr: Math.round(a.reduce((x,y)=>x+y,0)/a.length),
+      };
+      cur.push(last);
     }
   }
   return rosters;

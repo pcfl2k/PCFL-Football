@@ -99,7 +99,7 @@ nav.primary a.active::after {
 /* ---------------------------------------------------------------- */
 .ticker {
   background: var(--ink-2); border-bottom: 1px solid #23272e;
-  overflow: hidden; position: relative; height: 56px;
+  overflow: hidden; position: relative; height: 84px;
 }
 .ticker::before, .ticker::after {
   content:''; position:absolute; top:0; bottom:0; width:70px; z-index:2; pointer-events:none;
@@ -113,14 +113,14 @@ nav.primary a.active::after {
 .ticker:hover .ticker-track { animation-play-state: paused; }
 @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .tick {
-  display: flex; align-items: center; gap: 10px; padding: 0 22px; height: 100%;
+  display: flex; align-items: center; gap: 10px; padding: 0 24px; height: 100%;
   border-right: 1px solid #23272e; color: #fff; transition: background .15s;
 }
 .tick:hover { background: #1c2026; }
-.tick .tag { font-size: 8.5px; color: var(--muted-2); letter-spacing: .12em; text-transform: uppercase; }
+.tick .tag { font-size: 9px; color: var(--muted-2); letter-spacing: .12em; text-transform: uppercase; line-height: 1; margin-bottom: 6px; }
 .tick .tag b { color: var(--red); font-weight: 700; }
-.tick .row { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 1.35; }
-.tick img { width: 18px; height: 18px; }
+.tick .row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; line-height: 1; padding: 3px 0; }
+.tick img { width: 20px; height: 20px; flex-shrink: 0; }
 .tick .ab { font-weight: 600; width: 38px; color: #e6e9ed; }
 .tick .rec { color: var(--muted-2); font-size: 10px; width: 26px; }
 .tick .sc { font-family: var(--font-head); font-size: 14px; font-weight: 600; width: 22px; text-align: right; }
@@ -428,10 +428,24 @@ main { min-height: 70vh; }
 .team-hero .meta span b { color: var(--gold); }
 .team-cols { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap: 22px; margin-top: 22px; }
 
-.roster-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.roster-table th { position: sticky; top: 0; background: var(--ink-2); color: #cfd4db; font-size: 10px; text-transform: uppercase; padding: 8px 10px; text-align: left; }
+.roster-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 12.5px; }
+.roster-table th { position: sticky; top: 0; z-index: 2; background: var(--ink-2); color: #cfd4db; font-size: 10px; text-transform: uppercase; padding: 8px 10px; text-align: left; white-space: nowrap; }
 .roster-table td { padding: 6px 10px; border-bottom: 1px solid #f0f2f4; }
 .roster-table tr:hover td { background: #f7f8fa; }
+.roster-table th.attr-h { text-align: center; padding: 8px 4px; cursor: help; border-left: 1px solid rgba(255,255,255,.07); }
+.roster-table td.attr { text-align: center; padding: 4px 4px; line-height: 1.2; border-left: 1px solid #f4f5f7; font-variant-numeric: tabular-nums; }
+.roster-table td.attr b { display: block; font-size: 12.5px; font-weight: 700; }
+.roster-table td.attr span { display: block; font-size: 10px; color: var(--muted-2); }
+.r4 { color: #0a8f3c; }      /* 90+  elite      */
+.r3 { color: #16181c; }      /* 80s  starter    */
+.r2 { color: #5d6571; }      /* 70s  rotational */
+.r1 { color: #b3543e; }      /* <70  developmental */
+.attr-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center;
+  margin: -6px 0 12px; font-size: 11px; color: var(--muted);
+}
+.attr-legend b { color: var(--text); font-weight: 700; }
+.attr-legend .key { margin-left: auto; background: #e8eaee; border-radius: 999px; padding: 3px 12px; color: var(--muted); }
 .ovr { display: inline-block; min-width: 30px; text-align: center; border-radius: 5px; font-weight: 700; font-size: 11.5px; padding: 2px 4px; }
 .ovr.elite { background: #11823b; color: #fff; }
 .ovr.good { background: #cfe9d8; color: #0a5f2a; }
