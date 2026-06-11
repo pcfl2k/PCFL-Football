@@ -428,8 +428,9 @@ main { min-height: 70vh; }
 .team-hero .meta span b { color: var(--gold); }
 .team-cols { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap: 22px; margin-top: 22px; }
 
-.roster-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 12.5px; }
-.roster-table th { position: sticky; top: 0; z-index: 2; background: var(--ink-2); color: #cfd4db; font-size: 10px; text-transform: uppercase; padding: 8px 10px; text-align: left; white-space: nowrap; }
+.roster-card { overflow: visible; }
+.roster-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.roster-table th { position: sticky; top: 65px; z-index: 2; background: var(--ink-2); color: #cfd4db; font-size: 10px; text-transform: uppercase; padding: 8px 10px; text-align: left; white-space: nowrap; }
 .roster-table td { padding: 6px 10px; border-bottom: 1px solid #f0f2f4; }
 .roster-table tr:hover td { background: #f7f8fa; }
 .roster-table th.attr-h { text-align: center; padding: 8px 4px; cursor: help; border-left: 1px solid rgba(255,255,255,.07); }
@@ -446,6 +447,19 @@ main { min-height: 70vh; }
 }
 .attr-legend b { color: var(--text); font-weight: 700; }
 .attr-legend .key { margin-left: auto; background: #e8eaee; border-radius: 999px; padding: 3px 12px; color: var(--muted); }
+.st-chip {
+  display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; border-radius: 4px; padding: 2px 8px;
+}
+.st-a  { background: #e3f5ea; color: #0a8f3c; }
+.st-i  { background: #fdf3e0; color: #9a6b0a; }
+.st-o  { background: #eef0f3; color: #5d6571; }
+.st-ir { background: #fde9ec; color: var(--red); }
+@media (max-width: 900px){
+  .roster-card { overflow-x: auto; }
+  .roster-table { min-width: 880px; }
+  .roster-table th { top: 0; }
+}
 .ovr { display: inline-block; min-width: 30px; text-align: center; border-radius: 5px; font-weight: 700; font-size: 11.5px; padding: 2px 4px; }
 .ovr.elite { background: #11823b; color: #fff; }
 .ovr.good { background: #cfe9d8; color: #0a5f2a; }

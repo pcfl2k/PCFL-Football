@@ -487,17 +487,25 @@ VIEWS.team = async function(slug){
   const OFF = ['QB','HB','FB','WR','TE','C','G','T'], DEF = ['DE','DT','LB','CB','S'];
   const ATTRS = [['SP','Speed'],['AC','Acceleration'],['AG','Agility'],['ST','Strength'],['HA','Hands'],['EN','Endurance'],['IN','Intelligence'],['DI','Discipline']];
   const rcls = v => v>=90?'r4':v>=80?'r3':v>=70?'r2':'r1';
+  const STATUS = { A:['Active','st-a'], I:['Inactive','st-i'], O:['O','st-o'], IR:['IR','st-ir'] };
+  const stChip = p => {
+    const [label, cls] = STATUS[p.status] || [p.status, 'st-o'];
+    let h = `<span class="st-chip ${cls}">${esc(label)}</span>`;
+    if (p.inj && p.inj !== 'OK' && p.inj !== p.status) h += ` <span class="st-chip st-ir" title="Injury designation">${esc(p.inj)}</span>`;
+    return h;
+  };
   const unitOf = p => OFF.includes(p.pos) ? 'offense' : DEF.includes(p.pos) ? 'defense' : 'special';
   const rosterRows = unit => roster.filter(p=>unitOf(p)===unit)
     .sort((a,b)=> OFF.concat(DEF,['K','P']).indexOf(a.pos) - OFF.concat(DEF,['K','P']).indexOf(b.pos) || (a.depth||9)-(b.depth||9))
     .map(p=>`<tr><td>${p.num}</td>
-      <td style="font-weight:600;white-space:nowrap">${esc(p.name)}${p.inj!=='OK'?` <span class="chip l">${esc(p.inj)}</span>`:p.status==='IR'?' <span class="chip l">IR</span>':''}</td>
+      <td style="font-weight:600;white-space:nowrap">${esc(p.name)}</td>
       <td>${esc(p.pos)}${p.depth?`<span style="color:var(--muted-2)">${p.depth}</span>`:''}</td>
       <td>${esc(p.yr)==='R'?'FR':['','FR','SO','JR','SR'][+p.yr]||esc(p.yr)}</td><td>${esc(p.ht)}</td><td>${p.wt}</td>
+      <td style="white-space:nowrap">${stChip(p)}</td>
       <td><span class="ovr ${p.ovr>=85?'elite':p.ovr>=78?'good':'avg'}">${p.ovr}</span></td>
       ${(p.a||[]).map((v,i)=>`<td class="attr"><b class="${rcls(v)}">${v}</b><span>${(p.p||[])[i] ?? ''}</span></td>`).join('')}
     </tr>`).join('');
-  const rosterHead = `<tr><th>#</th><th>Player</th><th>Pos</th><th>Yr</th><th>Ht</th><th>Wt</th><th title="Overall — average of the 8 actual ratings">OVR</th>
+  const rosterHead = `<tr><th>#</th><th>Player</th><th>Pos</th><th>Yr</th><th>Ht</th><th>Wt</th><th title="Roster designation from the FBPro98 roster file">Status</th><th title="Overall — average of the 8 actual ratings">OVR</th>
     ${ATTRS.map(([k,n])=>`<th class="attr-h" title="${n}">${k}</th>`).join('')}</tr>`;
   const legend = `<div class="attr-legend">${ATTRS.map(([k,n])=>`<span><b>${k}</b> ${n}</span>`).join('')}
     <span class="key"><b>Top</b> actual · <b>bottom</b> potential</span></div>`;
@@ -540,19 +548,19 @@ VIEWS.team = async function(slug){
             <img src="${logo(opp)}" alt=""><b>${home?'vs':'at'} ${esc(T(opp).name)}</b>
             <span style="margin-left:auto;font-family:var(--font-head)">${g.final?`<span class="chip ${won?'w':'l'}">${won?'W':'L'}</span> ${my}–${their}`:`<span style="color:var(--muted-2);font-size:11px">${esc(g.date||'')}</span>`}</span></a>`;
         }).join('')}</div>
-        <div class="section-h"><span class="bar"></span><h2>Roster</h2><span class="sub">${roster.length} players · FBPro98 actual &amp; potential ratings</span></div>
-        <div class="pill-tabs" id="roster-tabs">
-          <button class="on" data-u="offense">Offense</button><button data-u="defense">Defense</button><button data-u="special">Special Teams</button></div>
-        ${legend}
-        <div class="card reveal" style="max-height:560px;overflow:auto">
-          <table class="roster-table"><thead>${rosterHead}</thead>
-          <tbody id="roster-body" data-slug="${slug}">${rosterRows('offense')}</tbody></table></div>
       </div>
       <aside>
         <div class="section-h"><span class="bar"></span><h2>Team Leaders</h2></div>
         <div class="card reveal">${leaders || '<div class="empty">No qualified leaders yet.</div>'}</div>
       </aside>
     </div>
+    <div class="section-h"><span class="bar"></span><h2>Roster</h2><span class="sub">${roster.length} players · FBPro98 actual &amp; potential ratings</span></div>
+    <div class="pill-tabs" id="roster-tabs">
+      <button class="on" data-u="offense">Offense</button><button data-u="defense">Defense</button><button data-u="special">Special Teams</button></div>
+    ${legend}
+    <div class="card reveal roster-card">
+      <table class="roster-table"><thead>${rosterHead}</thead>
+      <tbody id="roster-body" data-slug="${slug}">${rosterRows('offense')}</tbody></table></div>
     <template id="roster-off">${rosterRows('offense')}</template>
     <template id="roster-def">${rosterRows('defense')}</template>
     <template id="roster-st">${rosterRows('special')}</template>`;
