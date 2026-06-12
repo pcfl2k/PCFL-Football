@@ -70,16 +70,6 @@
   "rev": 2
  },
  {
-  "id": "7gBDScEz0UM",
-  "title": "28W01ND@UCLA",
-  "published": "2026-05-31T01:37:53+00:00",
-  "season": 2028,
-  "week": 1,
-  "away": "notre-dame",
-  "home": "ucla",
-  "rev": 1
- },
- {
   "id": "s9KyEQJBBKY",
   "title": "28W01OKL@WASH",
   "published": "2026-05-31T01:37:31+00:00",
@@ -147,6 +137,16 @@
   "week": 13,
   "away": "michigan",
   "home": "ohio-state",
+  "rev": 1
+ },
+ {
+  "id": "YzblBrRj2HA",
+  "title": "27W13TENN@TEX",
+  "published": "2026-03-01T01:25:34+00:00",
+  "season": 2027,
+  "week": 13,
+  "away": "tennessee",
+  "home": "texas",
   "rev": 1
  }
 ]

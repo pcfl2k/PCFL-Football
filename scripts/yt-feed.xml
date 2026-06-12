@@ -172,29 +172,6 @@
   </media:group>
  </entry>
  <entry>
-  <id>yt:video:7gBDScEz0UM</id>
-  <yt:videoId>7gBDScEz0UM</yt:videoId>
-  <yt:channelId>UCCopjecFoHzlVp99e-3W2yA</yt:channelId>
-  <title>28W01ND@UCLA</title>
-  <link rel="alternate" href="https://www.youtube.com/watch?v=7gBDScEz0UM"/>
-  <author>
-   <name>PCFL Network</name>
-   <uri>https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA</uri>
-  </author>
-  <published>2026-05-31T01:37:53+00:00</published>
-  <updated>2026-05-31T01:37:54+00:00</updated>
-  <media:group>
-   <media:title>28W01ND@UCLA</media:title>
-   <media:content url="https://www.youtube.com/v/7gBDScEz0UM?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
-   <media:thumbnail url="https://i4.ytimg.com/vi/7gBDScEz0UM/hqdefault.jpg" width="480" height="360"/>
-   <media:description></media:description>
-   <media:community>
-    <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="7"/>
-   </media:community>
-  </media:group>
- </entry>
- <entry>
   <id>yt:video:s9KyEQJBBKY</id>
   <yt:videoId>s9KyEQJBBKY</yt:videoId>
   <yt:channelId>UCCopjecFoHzlVp99e-3W2yA</yt:channelId>
@@ -352,6 +329,29 @@
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
     <media:statistics views="2"/>
+   </media:community>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:YzblBrRj2HA</id>
+  <yt:videoId>YzblBrRj2HA</yt:videoId>
+  <yt:channelId>UCCopjecFoHzlVp99e-3W2yA</yt:channelId>
+  <title>27W13TENN@TEX</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=YzblBrRj2HA"/>
+  <author>
+   <name>PCFL Network</name>
+   <uri>https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA</uri>
+  </author>
+  <published>2026-03-01T01:25:34+00:00</published>
+  <updated>2026-05-05T03:59:37+00:00</updated>
+  <media:group>
+   <media:title>27W13TENN@TEX</media:title>
+   <media:content url="https://www.youtube.com/v/YzblBrRj2HA?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i2.ytimg.com/vi/YzblBrRj2HA/hqdefault.jpg" width="480" height="360"/>
+   <media:description></media:description>
+   <media:community>
+    <media:starRating count="0" average="0.00" min="1" max="5"/>
+    <media:statistics views="5"/>
    </media:community>
   </media:group>
  </entry>
