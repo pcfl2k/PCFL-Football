@@ -72,7 +72,7 @@ function renderChrome(){
 /* ------------------- mobile drawer + haptics ---------------------- */
 const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
 document.addEventListener('pointerdown', e => {
-  if (e.target.closest('a, button, select, .tick')) haptic(10);
+  if (e.target.closest('button')) haptic(10);
 }, { passive: true });
 
 function setupDrawer(){
@@ -81,7 +81,6 @@ function setupDrawer(){
     d.classList.toggle('open', open); o.classList.toggle('open', open); h.classList.toggle('open', open);
     h.setAttribute('aria-expanded', String(open)); d.setAttribute('aria-hidden', String(!open));
     document.body.style.overflow = open ? 'hidden' : '';
-    if (open) haptic(14);
   };
   h.addEventListener('click', () => set(!d.classList.contains('open')));
   o.addEventListener('click', () => set(false));
@@ -771,13 +770,11 @@ async function boot(){
   setupDrawer();
   document.addEventListener('change', e => {
     if (e.target.matches('select.season-sel')){
-      haptic(15);
       App.season = +e.target.value; localStorage.setItem('pcfl-season', App.season);
       const si = App.manifest.seasons.find(s=>s.year===App.season);
       App.week = si.latest; localStorage.setItem('pcfl-week', App.week);
       renderChrome(); renderTicker(); route();
     } else if (e.target.matches('select.week-sel')){
-      haptic(15);
       App.week = +e.target.value; localStorage.setItem('pcfl-week', App.week);
       renderChrome(); renderTicker(); route();
     }
