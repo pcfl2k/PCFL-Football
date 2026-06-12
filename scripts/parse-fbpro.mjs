@@ -467,7 +467,7 @@ function parseVideos(xmlPath){
 function main(){
   const seasons = readdirSync(DROPS).filter(d=>/^\d{4}$/.test(d));
   const videos = parseVideos(join(ROOT,'scripts','yt-feed.xml'));
-  const manifest = { generated: new Date().toISOString(), seasons: [] };
+  const manifest = { seasons: [] }; // no timestamp: keep CI output deterministic so the bot only commits real data changes
 
   writeFileSync(join(DATA,'teams.json'), JSON.stringify(TEAMS,null,1));
   writeFileSync(join(DATA,'videos.json'), JSON.stringify(videos,null,1));
