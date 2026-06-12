@@ -60,11 +60,35 @@ function countUp(elm, target, ms = 900){
 
 /* ----------------------------- header ---------------------------- */
 function renderChrome(){
-  $('#season-sel').innerHTML = App.manifest.seasons.map(s =>
+  const seasonOpts = App.manifest.seasons.map(s =>
     `<option value="${s.year}" ${s.year===App.season?'selected':''}>${s.year}</option>`).join('');
   const season = App.manifest.seasons.find(s => s.year === App.season);
-  $('#week-sel').innerHTML = season.weeks.map(w =>
+  const weekOpts = season.weeks.map(w =>
     `<option value="${w}" ${w===App.week?'selected':''}>Week ${w}</option>`).join('');
+  document.querySelectorAll('select.season-sel').forEach(s => s.innerHTML = seasonOpts);
+  document.querySelectorAll('select.week-sel').forEach(s => s.innerHTML = weekOpts);
+}
+
+/* ------------------- mobile drawer + haptics ---------------------- */
+const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('a, button, select, .tick')) haptic(10);
+}, { passive: true });
+
+function setupDrawer(){
+  const d = $('#drawer'), o = $('#drawer-overlay'), h = $('#hamburger');
+  const set = open => {
+    d.classList.toggle('open', open); o.classList.toggle('open', open); h.classList.toggle('open', open);
+    h.setAttribute('aria-expanded', String(open)); d.setAttribute('aria-hidden', String(!open));
+    document.body.style.overflow = open ? 'hidden' : '';
+    if (open) haptic(14);
+  };
+  h.addEventListener('click', () => set(!d.classList.contains('open')));
+  o.addEventListener('click', () => set(false));
+  $('#drawer-close').addEventListener('click', () => set(false));
+  d.addEventListener('click', e => { if (e.target.closest('.drawer-nav a, .drawer-yt')) set(false); });
+  window.addEventListener('hashchange', () => set(false));
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
 }
 
 async function renderTicker(){
@@ -326,8 +350,8 @@ VIEWS.game = async function(season, week, id, q){
     video: g.videoId ? `<div class="video-shell reveal in"><iframe src="https://www.youtube.com/embed/${g.videoId}?rel=0" title="PCFL Network broadcast" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>` : '',
     recap: `<div class="card recap-card reveal in"><div class="cat" style="color:var(--red);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">PCFL Network · Game Recap</div>
       <h2>${esc(g.story.headline)}</h2>${g.story.body.map(p=>`<p>${esc(p)}</p>`).join('')}</div>`,
-    box: `<div class="card reveal in"><div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-      <div style="border-right:1px solid var(--line)"><a href="#/teams/${g.away.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></a>${boxSide('away')}</div>
+    box: `<div class="card reveal in"><div class="box-2col">
+      <div><a href="#/teams/${g.away.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></a>${boxSide('away')}</div>
       <div><a href="#/teams/${g.home.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.home.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(H.name)}</b></a>${boxSide('home')}</div>
     </div></div>`,
     stats: `<div class="card reveal in">${fullStats}</div>`,
@@ -700,7 +724,7 @@ async function route(){
   const parts = pathPart.split('/').filter(Boolean);
   const name = parts[0] || 'home';
 
-  document.querySelectorAll('nav.primary a').forEach(a =>
+  document.querySelectorAll('[data-route]').forEach(a =>
     a.classList.toggle('active', a.dataset.route === name));
 
   const main = $('#view');
@@ -744,15 +768,19 @@ async function boot(){
   if (!seasonInfo.weeks.includes(App.week)) App.week = seasonInfo.latest;
 
   renderChrome();
-  $('#season-sel').addEventListener('change', e => {
-    App.season = +e.target.value; localStorage.setItem('pcfl-season', App.season);
-    const si = App.manifest.seasons.find(s=>s.year===App.season);
-    App.week = si.latest; localStorage.setItem('pcfl-week', App.week);
-    renderChrome(); renderTicker(); route();
-  });
-  $('#week-sel').addEventListener('change', e => {
-    App.week = +e.target.value; localStorage.setItem('pcfl-week', App.week);
-    renderTicker(); route();
+  setupDrawer();
+  document.addEventListener('change', e => {
+    if (e.target.matches('select.season-sel')){
+      haptic(15);
+      App.season = +e.target.value; localStorage.setItem('pcfl-season', App.season);
+      const si = App.manifest.seasons.find(s=>s.year===App.season);
+      App.week = si.latest; localStorage.setItem('pcfl-week', App.week);
+      renderChrome(); renderTicker(); route();
+    } else if (e.target.matches('select.week-sel')){
+      haptic(15);
+      App.week = +e.target.value; localStorage.setItem('pcfl-week', App.week);
+      renderChrome(); renderTicker(); route();
+    }
   });
 
   window.addEventListener('hashchange', route);

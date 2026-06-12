@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#101317">
 <title>PCFL Network — Pure College Football League</title>
 <meta name="description" content="PCFL Network: scores, rankings, standings, stats, rosters and full broadcast replays from the Pure College Football League.">
 <meta property="og:title" content="PCFL Network — Pure College Football League">
@@ -27,6 +28,9 @@
 
 <header class="main">
   <div class="wrap">
+    <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
+      <span></span><span></span><span></span>
+    </button>
     <a class="brand" href="#/">
       <img src="assets/brand/pcfl-logo-animated.gif" alt="PCFL logo">
       <span class="word"><b>PCFL<em>.</em></b><span>Pure College Football League</span></span>
@@ -43,11 +47,37 @@
       <a href="#/history" data-route="history">History</a>
     </nav>
     <div class="wk-select">
-      <label>Season</label><select id="season-sel"></select>
-      <label>Week</label><select id="week-sel"></select>
+      <label>Season</label><select class="season-sel"></select>
+      <label>Week</label><select class="week-sel"></select>
     </div>
   </div>
 </header>
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-hd">
+    <img src="assets/brand/pcfl-logo-animated.gif" alt="">
+    <div><b>PCFL<em style="color:var(--red);font-style:normal">.</em></b><span>Pure College Football League</span></div>
+    <button class="drawer-close" id="drawer-close" aria-label="Close menu">×</button>
+  </div>
+  <div class="drawer-sel">
+    <label>Season<select class="season-sel"></select></label>
+    <label>Week<select class="week-sel"></select></label>
+  </div>
+  <nav class="drawer-nav">
+    <a href="#/" data-route="home">Home</a>
+    <a href="#/scores" data-route="scores">Scores</a>
+    <a href="#/rankings" data-route="rankings">Rankings</a>
+    <a href="#/standings" data-route="standings">Standings</a>
+    <a href="#/teams" data-route="teams">Teams</a>
+    <a href="#/schedule" data-route="schedule">Schedule</a>
+    <a href="#/stats" data-route="stats">Stats</a>
+    <a href="#/awards" data-route="awards">Awards</a>
+    <a href="#/media" data-route="media">Media</a>
+    <a href="#/history" data-route="history">History</a>
+  </nav>
+  <a class="btn primary drawer-yt" href="https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA" target="_blank" rel="noopener">▶ PCFL Network on YouTube</a>
+</aside>
 
 <div class="ticker"><div class="ticker-track" id="ticker-track"></div></div>
 
