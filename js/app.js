@@ -335,12 +335,53 @@ VIEWS.home = async function(){
 
   const leaders = LEADER_DEFS.slice(0,6).map(d => leaderCard(d, wk.leaders[d.key])).join('');
 
-  const wrapHTML = wk.weeklyWrap ? `
-    <div class="section-h"><span class="bar"></span><h2>${esc(wk.weeklyWrap.headline||'Week '+wk.week+' Wrap')}</h2><span class="sub">PCFL Network AI Analyst</span></div>
-    <div class="card reveal weekly-wrap">
-      ${wk.weeklyWrap.subhead ? `<div class="ww-sub">${esc(wk.weeklyWrap.subhead)}</div>` : ''}
-      ${(wk.weeklyWrap.body||[]).map(p=>`<p>${esc(p)}</p>`).join('')}
-    </div>` : '';
+  const wrapHTML = (() => {
+    const ww = wk.weeklyWrap;
+    if (!ww) return '';
+    const SEGMENT_META = {
+      upset:     { tag: 'Upset',     icon: '⚡', accent: '#d6001c' },
+      statement: { tag: 'Statement', icon: '◆', accent: '#9e0015' },
+      spotlight: { tag: 'Spotlight', icon: '★', accent: '#f1be48' },
+      defense:   { tag: 'Defense',   icon: '⛨', accent: '#185fa5' },
+      shootout:  { tag: 'Shootout',  icon: '◎', accent: '#d85a30' },
+      race:      { tag: 'Race',      icon: '▲', accent: '#0a8f3c' },
+      storyline: { tag: 'Storyline', icon: '◇', accent: '#534ab7' },
+      milestone: { tag: 'Milestone', icon: '◉', accent: '#8a6a14' },
+    };
+    const head = `<div class="section-h"><span class="bar"></span><h2>${esc(ww.headline || ('Week ' + wk.week + ' Wrap'))}</h2><span class="sub">PCFL Network AI Analyst</span></div>`;
+
+    // New structured shape — render segments with icons + team logos
+    if (Array.isArray(ww.segments) && ww.segments.length){
+      const segments = ww.segments.map(s => {
+        const meta = SEGMENT_META[s.type] || SEGMENT_META.storyline;
+        const teamLogos = (s.teams || []).filter(slug => App.teamMap[slug]).map(slug =>
+          `<a href="#/teams/${slug}" class="ww-seg-team" title="${esc(T(slug).name)}"><img src="${logo(slug)}" alt=""><span>${esc(T(slug).abbr)}</span></a>`
+        ).join('');
+        return `<article class="ww-segment" style="--seg-accent:${meta.accent}">
+          <div class="ww-seg-head">
+            <span class="ww-seg-tag"><i class="ww-seg-icon">${meta.icon}</i>${meta.tag}</span>
+            <div class="ww-seg-teams">${teamLogos}</div>
+          </div>
+          <h3 class="ww-seg-title">${esc(s.title || '')}</h3>
+          <p class="ww-seg-body">${esc(s.body || '')}</p>
+        </article>`;
+      }).join('');
+      return `${head}
+        <div class="card reveal weekly-wrap weekly-wrap-v2">
+          ${ww.subhead ? `<div class="ww-sub">${esc(ww.subhead)}</div>` : ''}
+          ${ww.lead ? `<p class="ww-lead">${esc(ww.lead)}</p>` : ''}
+          <div class="ww-segments">${segments}</div>
+          ${ww.closer ? `<p class="ww-closer">${esc(ww.closer)}</p>` : ''}
+        </div>`;
+    }
+
+    // Legacy shape — keep working until cached content refreshes
+    return `${head}
+      <div class="card reveal weekly-wrap">
+        ${ww.subhead ? `<div class="ww-sub">${esc(ww.subhead)}</div>` : ''}
+        ${(ww.body || []).map(p => `<p>${esc(p)}</p>`).join('')}
+      </div>`;
+  })();
 
   return `
     ${heroHTML}

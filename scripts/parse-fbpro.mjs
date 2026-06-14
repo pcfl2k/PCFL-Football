@@ -682,7 +682,14 @@ const SYS_BROADCAST =
   'Voice: confident, observant, occasional flair, never hyperbolic. ' +
   'Surface a concrete turning point or key matchup; do not write generic copy. ' +
   'Use plain prose, no markdown, no emoji, no headers. ' +
-  'Never invent stats — only reason about what the input data shows.';
+  'Never invent stats — only reason about what the input data shows. ' +
+  'CRITICAL: The PCFL is a self-contained simulation league. NEVER name or reference ' +
+  'real-world coaches (no Deion Sanders, Nick Saban, Dabo Swinney, Kirby Smart, ' +
+  'Lincoln Riley, Marcus Freeman, or any other real coach). NEVER reference real-world ' +
+  'rivalries, conferences (SEC, Big Ten, etc.), bowl games, broadcast networks, or ' +
+  'media personalities. Treat every team as its own program in the PCFL universe. If ' +
+  'you need to refer to coaching, say "the staff" or "the coaching room" — never a ' +
+  'specific name.';
 
 function teamCtx(slug, records, ranks){
   const t = TEAMS.find(x => x.slug === slug);
@@ -771,20 +778,53 @@ async function aiWeeklyWrap(games, week, season, powerRankings){
   if (!games.length) return null;
   const scores = games.map(g=>{
     const A = TEAMS.find(t=>t.slug===g.away.team), H = TEAMS.find(t=>t.slug===g.home.team);
-    return `${A.name} ${g.away.score}, ${H.name} ${g.home.score}`;
+    return `${A.name} (${g.away.team}) ${g.away.score}, ${H.name} (${g.home.team}) ${g.home.score}`;
   }).join('\n');
-  const top5 = powerRankings.slice(0, 5).map(r => `${r.rank}. ${TEAMS.find(t=>t.slug===r.team).name}`).join('\n');
-  const prompt = `Write a PCFL Week ${week} wrap-up column covering the whole week. ${games.length} games:
+  const top5 = powerRankings.slice(0, 5).map(r => {
+    const t = TEAMS.find(t=>t.slug===r.team);
+    return `${r.rank}. ${t.name} (${r.team})`;
+  }).join('\n');
+  const validSlugs = TEAMS.map(t => t.slug).join(', ');
+
+  const prompt = `Write a PCFL Week ${week} wrap-up. Don't catalog every game — pick the most compelling 3-5 angles and break them out as structured segments.
+
+${games.length} games this week:
 ${scores}
 
 Top 5 in power poll:
 ${top5}
 
-Identify across-the-board storylines: any upsets vs the power poll, performances that move the needle, conference race tightening or loosening. 4-5 paragraphs. Pick one ANGLE (don't catalog every game), but reference at least 3 specific results.
+Valid team slugs (use these exactly when referencing teams in the JSON):
+${validSlugs}
 
-Return ONLY JSON:
-{ "headline": "8-12 words", "subhead": "one sentence", "body": ["p1","p2","p3","p4"] }`;
-  return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 1500, season });
+Segment "type" options (pick the right one for each segment — diversify, don't repeat the same type twice unless truly warranted):
+- upset      → an underdog winning when the power poll said otherwise
+- statement  → a dominant, message-sending performance
+- spotlight  → a single player's standout game (often the POG)
+- defense    → defensive dominance shaped the result
+- shootout   → high-scoring offensive duel
+- race       → conference / division standings implications
+- storyline  → an emerging narrative arc (streak, return, slump)
+- milestone  → record or streak watching
+
+Return ONLY JSON in this exact shape:
+{
+  "headline": "8-12 word sharp headline for the whole column",
+  "subhead": "one sentence framing the week",
+  "lead": "opening paragraph (2-3 sentences) — defining theme of the week",
+  "segments": [
+    {
+      "type": "upset" | "statement" | "spotlight" | "defense" | "shootout" | "race" | "storyline" | "milestone",
+      "title": "5-8 word section header",
+      "teams": ["team-slug", "team-slug"],
+      "body": "2-3 sentence write-up of this angle"
+    }
+  ],
+  "closer": "one sentence forward-looking comment about next week"
+}
+
+Produce 3 to 5 segments. Each segment's "teams" array must use 1 or 2 of the valid slugs above.`;
+  return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 2000, season });
 }
 
 /* ================================================================== */
