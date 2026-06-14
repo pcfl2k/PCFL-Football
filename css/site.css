@@ -69,10 +69,10 @@ header.main .wrap { display: flex; align-items: center; height: 62px; gap: 22px;
 .brand .word span { font-size: 9px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .22em; }
 .brand .word b em { color: var(--red); font-style: normal; }
 
-nav.primary { display: flex; align-items: stretch; height: 100%; overflow-x: auto; scrollbar-width: none; flex: 1; }
+nav.primary { display: flex; align-items: stretch; height: 100%; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; padding-right: 18px; }
 nav.primary::-webkit-scrollbar { display: none; }
 nav.primary a {
-  display: flex; align-items: center; padding: 0 13px; color: #c9ced6;
+  display: flex; align-items: center; padding: 0 11px; color: #c9ced6;
   font-family: var(--font-head); font-size: 13.5px; text-transform: uppercase;
   letter-spacing: .06em; position: relative; white-space: nowrap; transition: color .15s;
 }
@@ -83,7 +83,7 @@ nav.primary a.active::after {
   height: 3px; background: var(--red); border-radius: 2px 2px 0 0;
 }
 
-.wk-select { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.wk-select { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
 .wk-select label { font-size: 9.5px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .14em; }
 .wk-select select {
   appearance: none; background: var(--ink-3); color: #fff; border: 1px solid #2c323b;
@@ -698,7 +698,7 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
   .pp-row .ptsbar, .pp-row .beat { display: none; }
   .home-grid aside.rail { margin-top: 10px !important; }
 }
-@media (max-width: 900px){
+@media (max-width: 1080px){
   nav.primary, header.main .wk-select { display: none; }
   .hamburger { display: flex; }
   header.main .wrap { gap: 14px; }
