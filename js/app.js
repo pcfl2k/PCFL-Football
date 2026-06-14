@@ -713,7 +713,7 @@ VIEWS.history = async function(){
     <div class="empty card" style="margin-top:26px"><b>Dynasty records, champions & Hall of Fame</b>Coming as seasons are archived. Every weekly drop is preserved forever in the PCFL data vault.</div>`;
 };
 
-window.setWeek = w => { App.week = w; localStorage.setItem('pcfl-week', w); renderChrome(); renderTicker(); };
+window.setWeek = w => { App.week = w; renderChrome(); renderTicker(); };
 
 /* ============================ router ============================= */
 async function route(){
@@ -763,8 +763,10 @@ async function boot(){
   App.season = +(localStorage.getItem('pcfl-season')) || latest.year;
   if (!manifest.seasons.some(s=>s.year===App.season)) App.season = latest.year;
   const seasonInfo = manifest.seasons.find(s=>s.year===App.season);
-  App.week = +(localStorage.getItem('pcfl-week')) || seasonInfo.latest;
-  if (!seasonInfo.weeks.includes(App.week)) App.week = seasonInfo.latest;
+  // Always show the latest week on a fresh visit. Users navigate to other
+  // weeks via the selector, but selection is intentionally not persisted —
+  // returning visitors should see the newest content.
+  App.week = seasonInfo.latest;
 
   renderChrome();
   setupDrawer();
@@ -772,10 +774,10 @@ async function boot(){
     if (e.target.matches('select.season-sel')){
       App.season = +e.target.value; localStorage.setItem('pcfl-season', App.season);
       const si = App.manifest.seasons.find(s=>s.year===App.season);
-      App.week = si.latest; localStorage.setItem('pcfl-week', App.week);
+      App.week = si.latest;
       renderChrome(); renderTicker(); route();
     } else if (e.target.matches('select.week-sel')){
-      App.week = +e.target.value; localStorage.setItem('pcfl-week', App.week);
+      App.week = +e.target.value;
       renderChrome(); renderTicker(); route();
     }
   });
