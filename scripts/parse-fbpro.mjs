@@ -540,6 +540,35 @@ else             console.log(`ℹ AI content enabled via ${AI.provider} (${AI.mo
 
 function aiCacheDir(season){ return join(DATA, String(season), 'ai-cache'); }
 
+// Retry on 429 (rate-limit) with backoff. Anthropic returns `retry-after`
+// in seconds; HF doesn't always, so fall back to exponential.
+async function fetchWithRetry(url, opts, attempts = 4){
+  for (let i = 0; i < attempts; i++){
+    const r = await fetch(url, opts);
+    if (r.status !== 429) return r;
+    const retryAfter = r.headers.get('retry-after');
+    const wait = retryAfter ? Math.min(70, +retryAfter) * 1000 : Math.min(60000, 6000 * Math.pow(2, i));
+    console.warn(`AI rate-limited (${url.includes('anthropic')?'anthropic':'hf'}), waiting ${Math.round(wait/1000)}s before retry ${i+1}/${attempts-1}`);
+    await new Promise(res => setTimeout(res, wait));
+  }
+  return fetch(url, opts);
+}
+
+// Limit how many AI calls fire in parallel — keeps us under per-minute rate
+// limits without serializing the whole batch.
+async function pAllLimit(items, fn, limit = 4){
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker(){
+    while (next < items.length){
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 // Generous JSON extractor — open models often produce extra prose before
 // or after the JSON. Try fenced code blocks first, then the first {...}
 // substring that parses.
@@ -622,7 +651,7 @@ async function callClaude(prompt, opts = {}){
   }
 
   try {
-    const r = await fetch(AI.endpoint, fetchOpts);
+    const r = await fetchWithRetry(AI.endpoint, fetchOpts);
     if (!r.ok){
       const err = await r.text();
       console.warn(`AI call failed (${AI.provider}): ${r.status} ${err.slice(0, 200)}`);
@@ -988,7 +1017,7 @@ async function main(){
 
       // -------------- AI generation (recaps + wrap-up) ----------
       if (AI.enabled && gameData.games.length){
-        const recapResults = await Promise.all(gameData.games.map(g => aiRecap(g, week, season)));
+        const recapResults = await pAllLimit(gameData.games, g => aiRecap(g, week, season), 4);
         for (let i = 0; i < gameData.games.length; i++){
           const ai = recapResults[i];
           if (ai) gameData.games[i].aiStory = ai;
@@ -1033,10 +1062,9 @@ async function main(){
           (recent[winner.team] ??= []).push({ opp: teamName(loser.team), result: 'W', score: `${winner.score}-${loser.score}` });
           (recent[loser.team]  ??= []).push({ opp: teamName(winner.team), result: 'L', score: `${loser.score}-${winner.score}` });
         }
-        const previewResults = await Promise.all(nextWeekGames.map(g =>
-          aiPreview(g, week + 1, season,
-            records, Object.fromEntries(standData.powerRankings.map(r => [r.team, r.rank])),
-            recent)));
+        const ranksMap = Object.fromEntries(standData.powerRankings.map(r => [r.team, r.rank]));
+        const previewResults = await pAllLimit(nextWeekGames, g =>
+          aiPreview(g, week + 1, season, records, ranksMap, recent), 4);
         const previewsJson = {
           season: +season, week: week + 1, generated: standData.date,
           games: nextWeekGames.map((g, i) => previewResults[i] ? { ...g, ...previewResults[i] } : g).filter(Boolean),
