@@ -58,7 +58,8 @@ header.main {
   border-bottom: 3px solid var(--red);
   box-shadow: 0 6px 24px rgba(0,0,0,.35);
 }
-header.main .wrap { display: flex; align-items: center; height: 62px; gap: 22px; }
+/* Header uses full viewport width so nav doesn't get squeezed by .wrap's 1280px cap */
+header.main .wrap { display: flex; align-items: center; height: 62px; gap: 18px; max-width: none; padding: 0 24px; }
 .brand { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .brand img { height: 44px; width: 44px; border-radius: 8px; object-fit: cover; }
 .brand .word { line-height: 1; }
@@ -69,12 +70,12 @@ header.main .wrap { display: flex; align-items: center; height: 62px; gap: 22px;
 .brand .word span { font-size: 9px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .22em; }
 .brand .word b em { color: var(--red); font-style: normal; }
 
-nav.primary { display: flex; align-items: stretch; height: 100%; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; padding-right: 18px; }
+nav.primary { display: flex; align-items: stretch; height: 100%; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; padding-right: 14px; }
 nav.primary::-webkit-scrollbar { display: none; }
 nav.primary a {
-  display: flex; align-items: center; padding: 0 9px; color: #c9ced6;
-  font-family: var(--font-head); font-size: 12.5px; text-transform: uppercase;
-  letter-spacing: .05em; position: relative; white-space: nowrap; transition: color .15s;
+  display: flex; align-items: center; padding: 0 7px; color: #c9ced6;
+  font-family: var(--font-head); font-size: 12px; text-transform: uppercase;
+  letter-spacing: .04em; position: relative; white-space: nowrap; transition: color .15s;
 }
 nav.primary a:hover { color: #fff; }
 nav.primary a.active { color: #fff; }
@@ -83,14 +84,14 @@ nav.primary a.active::after {
   height: 3px; background: var(--red); border-radius: 2px 2px 0 0;
 }
 
-.wk-select { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
-.wk-select label { font-size: 9.5px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .14em; }
+.wk-select { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
+.wk-select label { font-size: 9px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .12em; }
 .wk-select select {
   appearance: none; background: var(--ink-3); color: #fff; border: 1px solid #2c323b;
-  border-radius: 7px; padding: 7px 28px 7px 12px; font-family: var(--font-head);
-  font-size: 13px; letter-spacing: .05em; cursor: pointer;
+  border-radius: 6px; padding: 6px 24px 6px 10px; font-family: var(--font-head);
+  font-size: 12px; letter-spacing: .04em; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23d6001c'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 10px center;
+  background-repeat: no-repeat; background-position: right 8px center;
 }
 .wk-select select:hover { border-color: var(--red); }
 
@@ -834,12 +835,13 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
   .pp-row .ptsbar, .pp-row .beat { display: none; }
   .home-grid aside.rail { margin-top: 10px !important; }
 }
-/* 13 nav items + selectors need ~1800px to fit cleanly — anything narrower
-   shows the hamburger drawer (which lists every route vertically anyway). */
-@media (max-width: 1799px){
+/* Below 1499px the hamburger drawer takes over (covers every laptop screen,
+   most basic monitors). Above that, the header spans the full viewport
+   (max-width: none) so nav and selectors have room without clipping. */
+@media (max-width: 1499px){
   nav.primary, header.main .wk-select { display: none; }
   .hamburger { display: flex; }
-  header.main .wrap { gap: 14px; }
+  header.main .wrap { gap: 14px; padding: 0 20px; }
   .topbar .wrap > span:first-child { display: none; }
 }
 @media (max-width: 760px){
