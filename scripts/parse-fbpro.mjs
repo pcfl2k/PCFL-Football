@@ -41,6 +41,30 @@ function t(slug,name,nickname,abbr,primary,secondary,conference,division,aliases
   return { slug,name,nickname,abbr,colors:{primary,secondary},conference,division,
     aliases:[name.toUpperCase(),abbr,...aliases] };
 }
+
+// Fight song YouTube videos — official band recordings where available.
+// `start`/`end` define a snippet (seconds) so the site doesn't play the full
+// song on every team page visit. Defaults: 0 → 20s.
+const FIGHT_SONGS = {
+  washington:       { youtubeId:'xN2HTCmpeV4', name:'Bow Down to Washington',           start:0,  end:22 },
+  usc:              { youtubeId:'cj7IYSv_BVE', name:'Conquest',                          start:0,  end:22 },
+  ucla:             { youtubeId:'Mi1rc1zGEQM', name:'Sons of Westwood / Mighty Bruins',  start:0,  end:22 },
+  oregon:           { youtubeId:'sf6wT7nn8i8', name:'Mighty Oregon',                     start:0,  end:22 },
+  'ohio-state':     { youtubeId:'uDI1qWHqJt4', name:'Buckeye Battle Cry',                start:0,  end:22 },
+  'notre-dame':     { youtubeId:'clNTdf8xAtk', name:'Notre Dame Victory March',          start:0,  end:22 },
+  colorado:         { youtubeId:'jcTOBFq-2T0', name:'CU Fight Song',                     start:0,  end:22 },
+  oklahoma:         { youtubeId:'5ErtzJSUiQY', name:'Boomer Sooner',                     start:0,  end:22 },
+  michigan:         { youtubeId:'Oww_gtVVqkQ', name:'The Victors',                       start:0,  end:22 },
+  texas:            { youtubeId:'W41tB1nkQtI', name:'The Eyes of Texas',                 start:0,  end:22 },
+  'penn-state':     { youtubeId:'wLIuF9E6gcQ', name:'Fight On, State',                   start:0,  end:22 },
+  'boston-college': { youtubeId:'qBwkc-x8dYs', name:'For Boston',                        start:0,  end:22 },
+  clemson:          { youtubeId:'tGl_XIGlhfw', name:'Tiger Rag',                         start:0,  end:22 },
+  lsu:              { youtubeId:'YZ4e35_hdjE', name:'Hey Fightin’ Tigers',          start:0,  end:22 },
+  tennessee:        { youtubeId:'ylc2FxBLvz4', name:'Rocky Top',                         start:0,  end:22 },
+  arkansas:         { youtubeId:'0hJMyTBFJnI', name:'Arkansas Fight',                    start:0,  end:22 },
+  georgia:          { youtubeId:'pe6njUwC59c', name:'Glory, Glory',                      start:0,  end:22 },
+  miami:            { youtubeId:'HMfQ-GKhvQo', name:'Miami U How-Dee-Doo',               start:0,  end:22 },
+};
 const ALIAS = new Map();
 for (const tm of TEAMS) for (const a of tm.aliases) ALIAS.set(a, tm.slug);
 
@@ -469,6 +493,8 @@ function main(){
   const videos = parseVideos(join(ROOT,'scripts','yt-feed.xml'));
   const manifest = { seasons: [] }; // no timestamp: keep CI output deterministic so the bot only commits real data changes
 
+  // Attach fight-song metadata before writing teams.json
+  for (const tm of TEAMS) if (FIGHT_SONGS[tm.slug]) tm.fightSong = FIGHT_SONGS[tm.slug];
   writeFileSync(join(DATA,'teams.json'), JSON.stringify(TEAMS,null,1));
   writeFileSync(join(DATA,'videos.json'), JSON.stringify(videos,null,1));
 

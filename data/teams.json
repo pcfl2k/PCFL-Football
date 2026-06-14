@@ -15,7 +15,13 @@
    "UW",
    "WASH",
    "WAS"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "xN2HTCmpeV4",
+   "name": "Bow Down to Washington",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "usc",
@@ -31,7 +37,13 @@
   "aliases": [
    "USC",
    "USC"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "cj7IYSv_BVE",
+   "name": "Conquest",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "ucla",
@@ -48,7 +60,13 @@
    "UCLA",
    "UCLA",
    "UCL"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "Mi1rc1zGEQM",
+   "name": "Sons of Westwood / Mighty Bruins",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "oregon",
@@ -66,7 +84,13 @@
    "UO",
    "ORE",
    "OR"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "sf6wT7nn8i8",
+   "name": "Mighty Oregon",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "ohio-state",
@@ -82,7 +106,13 @@
   "aliases": [
    "OHIO STATE",
    "OSU"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "uDI1qWHqJt4",
+   "name": "Buckeye Battle Cry",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "notre-dame",
@@ -98,7 +128,13 @@
   "aliases": [
    "NOTRE DAME",
    "ND"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "clNTdf8xAtk",
+   "name": "Notre Dame Victory March",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "colorado",
@@ -115,7 +151,13 @@
    "COLORADO",
    "COL",
    "COLO"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "jcTOBFq-2T0",
+   "name": "CU Fight Song",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "oklahoma",
@@ -132,7 +174,13 @@
    "OKLAHOMA",
    "OU",
    "OKL"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "5ErtzJSUiQY",
+   "name": "Boomer Sooner",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "michigan",
@@ -149,7 +197,13 @@
    "MICHIGAN",
    "MICH",
    "MIC"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "Oww_gtVVqkQ",
+   "name": "The Victors",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "texas",
@@ -165,7 +219,13 @@
   "aliases": [
    "TEXAS",
    "TEX"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "W41tB1nkQtI",
+   "name": "The Eyes of Texas",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "penn-state",
@@ -183,7 +243,13 @@
    "PSU",
    "PENNST",
    "PENN ST"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "wLIuF9E6gcQ",
+   "name": "Fight On, State",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "boston-college",
@@ -200,7 +266,13 @@
    "BOSTON COLLEGE",
    "BC",
    "BOSTON COLLEG"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "qBwkc-x8dYs",
+   "name": "For Boston",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "clemson",
@@ -217,7 +289,13 @@
    "CLEMSON",
    "CLEM",
    "CLE"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "tGl_XIGlhfw",
+   "name": "Tiger Rag",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "lsu",
@@ -233,7 +311,13 @@
   "aliases": [
    "LSU",
    "LSU"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "YZ4e35_hdjE",
+   "name": "Hey Fightin’ Tigers",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "tennessee",
@@ -250,7 +334,13 @@
    "TENNESSEE",
    "TENN",
    "TEN"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "ylc2FxBLvz4",
+   "name": "Rocky Top",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "arkansas",
@@ -266,7 +356,13 @@
   "aliases": [
    "ARKANSAS",
    "ARK"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "0hJMyTBFJnI",
+   "name": "Arkansas Fight",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "georgia",
@@ -282,7 +378,13 @@
   "aliases": [
    "GEORGIA",
    "UGA"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "pe6njUwC59c",
+   "name": "Glory, Glory",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "miami",
@@ -298,6 +400,12 @@
   "aliases": [
    "MIAMI",
    "MIA"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "HMfQ-GKhvQo",
+   "name": "Miami U How-Dee-Doo",
+   "start": 0,
+   "end": 22
+  }
  }
 ]

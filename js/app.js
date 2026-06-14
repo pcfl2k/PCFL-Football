@@ -109,6 +109,73 @@ async function renderTicker(){
   $('#ticker-track').innerHTML = items + items; /* duplicate for seamless loop */
 }
 
+/* ----------------------- fight song player ----------------------- */
+function isFightSongMuted(){ return localStorage.getItem('pcfl-fightsongs-muted') === '1'; }
+function setFightSongMuted(v){
+  if (v) localStorage.setItem('pcfl-fightsongs-muted','1');
+  else   localStorage.removeItem('pcfl-fightsongs-muted');
+}
+function stopFightSong(){
+  const holder = document.getElementById('fightsong-frame-holder');
+  if (holder) holder.innerHTML = '';
+}
+function playFightSong(team){
+  const t = team || App.teamMap[document.getElementById('fightsong-chip')?.dataset.team];
+  if (!t?.fightSong) return;
+  const holder = document.getElementById('fightsong-frame-holder');
+  if (!holder) return;
+  holder.innerHTML = '';
+  const fs = t.fightSong;
+  const iframe = document.createElement('iframe');
+  iframe.src = `https://www.youtube.com/embed/${fs.youtubeId}`
+    + `?autoplay=1&start=${fs.start||0}&end=${fs.end||22}`
+    + '&controls=0&playsinline=1&modestbranding=1&rel=0';
+  iframe.allow = 'autoplay; encrypted-media';
+  iframe.setAttribute('frameborder','0');
+  iframe.style.cssText = 'width:300px;height:200px';
+  holder.appendChild(iframe);
+}
+function setFightSongUI(state){
+  // state: 'playing' | 'paused' | 'muted'
+  const chip = document.getElementById('fightsong-chip');
+  const lbl  = document.getElementById('fightsong-state');
+  if (!chip || !lbl) return;
+  chip.classList.toggle('playing', state === 'playing');
+  chip.classList.toggle('muted',   state === 'muted');
+  lbl.textContent = state === 'playing' ? 'now playing · tap to mute'
+                  : state === 'muted'   ? 'muted · tap to play'
+                                        : 'tap to play';
+}
+function setupFightSong(){
+  const chip = document.getElementById('fightsong-chip');
+  if (!chip) return;
+  const team = App.teamMap[chip.dataset.team];
+  if (!team?.fightSong) return;
+  if (isFightSongMuted()){
+    setFightSongUI('muted');
+  } else {
+    playFightSong(team);
+    setFightSongUI('playing');
+    // Auto-update to paused state when the snippet ends (~end seconds after start)
+    const snippetMs = ((team.fightSong.end || 22) - (team.fightSong.start || 0) + 2) * 1000;
+    setTimeout(() => {
+      if (document.getElementById('fightsong-chip') === chip)
+        setFightSongUI('paused');
+    }, snippetMs);
+  }
+  chip.onclick = () => {
+    if (chip.classList.contains('playing')){
+      stopFightSong();
+      setFightSongMuted(true);
+      setFightSongUI('muted');
+    } else {
+      setFightSongMuted(false);
+      playFightSong(team);
+      setFightSongUI('playing');
+    }
+  };
+}
+
 /* ------------------------- shared partials ----------------------- */
 function gameCard(g, wk, ranks){
   const win = g.away.score > g.home.score ? 'away' : 'home';
@@ -553,12 +620,22 @@ VIEWS.team = async function(slug){
   return `
     <div class="team-hero reveal" style="background:linear-gradient(120deg,${t.colors.primary} 0%,#0d0f13 90%)">
       <img class="lg" src="${logo(slug,true)}" onerror="this.src='${logo(slug)}'" alt="">
-      <div><div class="nm">${esc(t.name)} ${esc(t.nickname)}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${esc(t.name)} ${esc(t.nickname)}</div>
         <div class="meta">
           <span>Record <b>${wk.records[slug]||'0-0'}</b></span>
           ${ranks[slug]?`<span>Power Poll <b>#${ranks[slug]}</b></span>`:''}
           ${standLine?`<span>${esc(standLine.div)} <b>${['1st','2nd','3rd','4th','5th'][standLine.pos-1]}</b></span><span>PF <b>${standLine.pf}</b></span><span>PA <b>${standLine.pa}</b></span><span>Streak <b>${esc(standLine.streak)}</b></span>`:''}
         </div></div>
+      ${t.fightSong ? `
+      <button class="fightsong-chip" id="fightsong-chip" data-team="${slug}" title="${esc(t.fightSong.name)}">
+        <span class="fs-bars"><i></i><i></i><i></i><i></i></span>
+        <span class="fs-lbl">
+          <span class="fs-title">${esc(t.fightSong.name)}</span>
+          <span class="fs-state" id="fightsong-state">loading…</span>
+        </span>
+      </button>
+      <div id="fightsong-frame-holder" style="position:absolute;left:-9999px;top:0;width:300px;height:200px"></div>
+      ` : ''}
     </div>
     <div class="team-cols">
       <div>
@@ -848,10 +925,13 @@ async function route(){
     console.error(err);
     html = `<div class="empty card" style="margin-top:30px"><b>Something went wrong</b>${esc(err.message)}</div>`;
   }
+  // tear down anything from the previous view (e.g., the previous team's fight song)
+  stopFightSong();
   main.innerHTML = `<div class="view wrap">${html}</div>`;
   document.title = `PCFL Network — ${name === 'home' ? `Week ${App.week}, ${App.season} Season` : name[0].toUpperCase()+name.slice(1)}`;
   revealInit(main); animateWidths(main);
   main.querySelectorAll('[data-count]').forEach(n => countUp(n, +n.dataset.count));
+  setupFightSong();
   window.scrollTo({ top: 0 });
 }
 
