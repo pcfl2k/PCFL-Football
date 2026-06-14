@@ -796,8 +796,9 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
   .pp-row .ptsbar, .pp-row .beat { display: none; }
   .home-grid aside.rail { margin-top: 10px !important; }
 }
-/* 13 nav items don't fit comfortably under ~1600px — hamburger takes over below */
-@media (max-width: 1599px){
+/* 13 nav items + selectors need ~1800px to fit cleanly — anything narrower
+   shows the hamburger drawer (which lists every route vertically anyway). */
+@media (max-width: 1799px){
   nav.primary, header.main .wk-select { display: none; }
   .hamburger { display: flex; }
   header.main .wrap { gap: 14px; }
