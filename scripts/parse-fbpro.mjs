@@ -485,10 +485,335 @@ function parseVideos(xmlPath){
   }).filter(v=>v.id);
 }
 
+/* ================================================================== */
+/* AI Content Layer (previews, recaps, weekly wrap-up)                  */
+/* ================================================================== */
+/*
+ * Calls Anthropic's Messages API (Claude Haiku 4.5) to generate broadcast-
+ * voice content from the deterministic JSON we've already produced.
+ *
+ * Behavior:
+ *   - If ANTHROPIC_API_KEY is unset, every helper returns null and the
+ *     site falls back to the existing deterministic content. The build
+ *     stays green either way.
+ *   - Calls are cached by SHA-256 of (model + prompt). The cache lives at
+ *     data/<season>/ai-cache/<hash>.json and is checked into the repo, so
+ *     CI never regenerates content for inputs it has already seen — costs
+ *     stay at "first ever drop of week N" only.
+ *   - All API calls run in parallel via Promise.all per week. A typical
+ *     drop fires ~20 calls and finishes in ~10s.
+ */
+import { createHash } from 'node:crypto';
+
+const AI = {
+  apiKey: process.env.ANTHROPIC_API_KEY || '',
+  model: 'claude-haiku-4-5-20251001',
+  enabled: false,
+};
+AI.enabled = !!AI.apiKey;
+if (!AI.enabled) console.log('ℹ ANTHROPIC_API_KEY not set — AI content disabled (deterministic fallback in use).');
+
+function aiCacheDir(season){ return join(DATA, String(season), 'ai-cache'); }
+
+async function callClaude(prompt, opts = {}){
+  if (!AI.enabled) return null;
+  const cacheKey = createHash('sha256').update(AI.model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
+  const cacheFile = join(aiCacheDir(opts.season || 'global'), cacheKey + '.json');
+  if (existsSync(cacheFile)){
+    try { return JSON.parse(readFileSync(cacheFile, 'utf8')); } catch {}
+  }
+  mkdirSync(aiCacheDir(opts.season || 'global'), { recursive: true });
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': AI.apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: AI.model,
+        max_tokens: opts.maxTokens || 1500,
+        system: opts.system || '',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!r.ok){
+      console.warn(`AI call failed: ${r.status} ${await r.text()}`);
+      return null;
+    }
+    const j = await r.json();
+    const text = j.content?.[0]?.text || '';
+    let result;
+    if (opts.parseJSON){
+      // Claude often wraps JSON in code fences; strip and parse.
+      const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+      try { result = JSON.parse(cleaned); }
+      catch (e){ console.warn(`AI JSON parse failed: ${e.message}`); return null; }
+    } else {
+      result = { text };
+    }
+    writeFileSync(cacheFile, JSON.stringify(result));
+    return result;
+  } catch (e){
+    console.warn(`AI fetch error: ${e.message}`);
+    return null;
+  }
+}
+
+const SYS_BROADCAST =
+  'You are a veteran college football broadcast analyst writing for the PCFL Network. ' +
+  'Voice: confident, observant, occasional flair, never hyperbolic. ' +
+  'Surface a concrete turning point or key matchup; do not write generic copy. ' +
+  'Use plain prose, no markdown, no emoji, no headers. ' +
+  'Never invent stats — only reason about what the input data shows.';
+
+function teamCtx(slug, records, ranks){
+  const t = TEAMS.find(x => x.slug === slug);
+  if (!t) return null;
+  return { name: t.name, nickname: t.nickname, record: records[slug] || '0-0', rank: ranks[slug] ?? null };
+}
+
+/* -------------------- AI preview (pre-sim) ----------------------- */
+async function aiPreview(game, week, season, records, ranks, recent){
+  const A = teamCtx(game.away, records, ranks);
+  const H = teamCtx(game.home, records, ranks);
+  if (!A || !H) return null;
+  const prompt = `Write a 2-paragraph preview for an upcoming PCFL Week ${week} matchup.
+
+Game: ${A.name} (${A.record}${A.rank?`, ranked #${A.rank}`:''}) at ${H.name} (${H.record}${H.rank?`, ranked #${H.rank}`:''}).
+
+Recent ${A.name} results: ${(recent[game.away]||[]).map(r=>`${r.opp} ${r.result} ${r.score}`).join('; ') || 'season opener'}.
+Recent ${H.name} results: ${(recent[game.home]||[]).map(r=>`${r.opp} ${r.result} ${r.score}`).join('; ') || 'season opener'}.
+
+Return ONLY JSON in this exact shape:
+{
+  "headline": "8-12 word headline",
+  "subhead": "one short sentence framing the matchup",
+  "prediction": { "winner": "${game.away}" | "${game.home}", "score": "AA-BB", "confidence": 0.50-0.85 },
+  "xFactor": { "team": "${game.away}" | "${game.home}", "role": "QB|RB|WR|defense|special", "why": "one sentence" },
+  "keyMatchup": "one sentence on the chess-match angle",
+  "body": ["paragraph 1 (2-3 sentences)", "paragraph 2 (2-3 sentences)"]
+}`;
+  const r = await callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 900, season });
+  return r;
+}
+
+/* -------------------- AI recap (post-sim) ------------------------ */
+async function aiRecap(game, week, season){
+  const aw = game.away, hm = game.home;
+  const ts = Object.fromEntries(game.teamStats.map(r => [r.label, r]));
+  const A = TEAMS.find(x => x.slug === aw.team), H = TEAMS.find(x => x.slug === hm.team);
+  const winnerSide = aw.score > hm.score ? 'away' : 'home';
+  const winner = winnerSide === 'away' ? A : H;
+  const loser  = winnerSide === 'away' ? H : A;
+  // top performers from box score
+  const top = side => {
+    const box = game.box[side] || [];
+    const get = sect => box.find(s=>s.section===sect)?.rows.filter(r=>!r.total) || [];
+    const passing = get('Passing')[0];
+    const rushing = get('Rushing').sort((a,b)=>+(b.vals[1]||0)-+(a.vals[1]||0))[0];
+    const recv = get('Receiving').sort((a,b)=>+(b.vals[1]||0)-+(a.vals[1]||0))[0];
+    const def = get('Defense').sort((a,b)=>(+b.vals[0]+(+b.vals[1])*3)-(+a.vals[0]+(+a.vals[1])*3))[0];
+    return { passing, rushing, recv, def };
+  };
+  const tA = top('away'), tH = top('home');
+  const fmt = (p, kind) => p ? `${p.name}: ${kind==='pass'?`${p.vals[1]}/${p.vals[0]}, ${p.vals[2]} yds, ${p.vals[5]} TD`:kind==='rush'?`${p.vals[0]} car, ${p.vals[1]} yds, ${p.vals[4]} TD`:kind==='recv'?`${p.vals[0]} rec, ${p.vals[1]} yds, ${p.vals[4]} TD`:`${p.vals[0]} tkl, ${p.vals[1]} sk`}` : 'n/a';
+
+  const prompt = `Write a richer broadcast recap of a PCFL Week ${week} game.
+
+Final: ${A.name} ${aw.score}, ${H.name} ${hm.score}. Winner: ${winner.name}.
+Total yards: ${A.name} ${ts['TOTAL NET YARDS']?.away ?? '?'}, ${H.name} ${ts['TOTAL NET YARDS']?.home ?? '?'}.
+Rushing yards: ${A.name} ${ts['NET RUSHING YARDS']?.away ?? '?'}, ${H.name} ${ts['NET RUSHING YARDS']?.home ?? '?'}.
+Passing yards: ${A.name} ${ts['NET PASSING YARDS']?.away ?? '?'}, ${H.name} ${ts['NET PASSING YARDS']?.home ?? '?'}.
+Turnovers: ${A.name} ${ts['FUMBLES-LOST']?.away ?? '?'} fumbles, ${H.name} ${ts['FUMBLES-LOST']?.home ?? '?'} fumbles.
+${game.playerOfGame ? `Player of the Game: ${game.playerOfGame.name} (${game.playerOfGame.pos}, ${TEAMS.find(t=>t.slug===game.playerOfGame.team)?.name}).` : ''}
+
+${A.name} top performers:
+  QB ${fmt(tA.passing,'pass')}
+  RB ${fmt(tA.rushing,'rush')}
+  WR ${fmt(tA.recv,'recv')}
+  DEF ${fmt(tA.def,'def')}
+${H.name} top performers:
+  QB ${fmt(tH.passing,'pass')}
+  RB ${fmt(tH.rushing,'rush')}
+  WR ${fmt(tH.recv,'recv')}
+  DEF ${fmt(tH.def,'def')}
+
+Return ONLY JSON in this shape:
+{
+  "headline": "punchy 8-14 word headline",
+  "body": ["paragraph 1", "paragraph 2", "paragraph 3"],
+  "turningPoint": "one sentence on the decisive moment or shift",
+  "unsungHero": { "name": "player name from the stats above", "team": "${aw.team}" | "${hm.team}", "why": "why they don't get the credit POG gets" }
+}`;
+  return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 1200, season });
+}
+
+/* -------------------- Weekly wrap-up article --------------------- */
+async function aiWeeklyWrap(games, week, season, powerRankings){
+  if (!games.length) return null;
+  const scores = games.map(g=>{
+    const A = TEAMS.find(t=>t.slug===g.away.team), H = TEAMS.find(t=>t.slug===g.home.team);
+    return `${A.name} ${g.away.score}, ${H.name} ${g.home.score}`;
+  }).join('\n');
+  const top5 = powerRankings.slice(0, 5).map(r => `${r.rank}. ${TEAMS.find(t=>t.slug===r.team).name}`).join('\n');
+  const prompt = `Write a PCFL Week ${week} wrap-up column covering the whole week. ${games.length} games:
+${scores}
+
+Top 5 in power poll:
+${top5}
+
+Identify across-the-board storylines: any upsets vs the power poll, performances that move the needle, conference race tightening or loosening. 4-5 paragraphs. Pick one ANGLE (don't catalog every game), but reference at least 3 specific results.
+
+Return ONLY JSON:
+{ "headline": "8-12 words", "subhead": "one sentence", "body": ["p1","p2","p3","p4"] }`;
+  return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 1500, season });
+}
+
+/* ================================================================== */
+/* Predictive Engine: SoS, playoff projection                          */
+/* ================================================================== */
+
+function computeSoS(season, schedule, weekJsons){
+  // Per-team SoS = average opponent win% across full season schedule.
+  // Use cumulative records snapshot from the most-recent week available.
+  const latest = weekJsons[weekJsons.length - 1];
+  if (!latest) return null;
+  const recOf = slug => {
+    for (const c of latest.standings) for (const d of c.divisions){
+      const tm = d.teams.find(t => t.team === slug);
+      if (tm) return tm.w + tm.l ? tm.w / (tm.w + tm.l) : 0;
+    }
+    return 0.5;
+  };
+  const out = {};
+  for (const t of TEAMS){
+    // every game in the season schedule involving this team
+    const opps = [];
+    for (const w of schedule)
+      for (const g of w.games){
+        if (g.away === t.slug) opps.push(g.home);
+        if (g.home === t.slug) opps.push(g.away);
+      }
+    const avg = opps.length ? opps.reduce((s,o)=>s+recOf(o), 0)/opps.length : 0;
+    out[t.slug] = +(avg.toFixed(4));
+  }
+  return out;
+}
+
+function computePlayoffPicture(season, schedule, weekJsons){
+  // PCFL structure observed from drops: Eastern + Western conferences, each with 2 divisions.
+  // Playoff weeks 13 (Wild Card), 14 (Conference), 15 (League Championship / PCFL Bowl).
+  // Seeding model: each division winner auto-in (4); two wild cards per conference take next-best records (4).
+  // → 8-team bracket, 4 from each conference. Wild card round: #2 div winners host wild cards; #1 div winners get bye? Simpler model: top-2 records in conference vs bottom-2 of qualifiers.
+  const latest = weekJsons[weekJsons.length - 1];
+  if (!latest) return null;
+  const wk = latest.week;
+  const totalRegularWeeks = 12;
+  const remaining = Math.max(0, totalRegularWeeks - wk);
+
+  const all = []; // { team, conf, div, w, l, t, pf, pa, divPct, confPct }
+  for (const c of latest.standings)
+    for (const d of c.divisions)
+      for (const tm of d.teams){
+        const conf = c.conference;
+        const totalG = tm.w + tm.l + tm.t;
+        all.push({
+          team: tm.team, conf, div: d.name,
+          w: tm.w, l: tm.l, t: tm.t, pf: tm.pf, pa: tm.pa, streak: tm.streak,
+          winPct: totalG ? (tm.w + 0.5 * tm.t) / totalG : 0,
+          gamesLeft: remaining,
+          maxWins: tm.w + remaining,
+          minWins: tm.w,
+        });
+      }
+
+  // Division winners (best record per division by winPct, ties broken by PF-PA diff)
+  const divWinners = {};
+  for (const t of all){
+    const key = `${t.conf}|${t.div}`;
+    if (!divWinners[key] || t.winPct > divWinners[key].winPct ||
+        (t.winPct === divWinners[key].winPct && (t.pf - t.pa) > (divWinners[key].pf - divWinners[key].pa))){
+      divWinners[key] = t;
+    }
+  }
+
+  // Wild cards: top 2 remaining per conference
+  const confSeeds = {};
+  for (const conf of [...new Set(all.map(t => t.conf))]){
+    const divWinnersInConf = Object.values(divWinners).filter(t => t.conf === conf);
+    const remaining = all.filter(t => t.conf === conf && !divWinnersInConf.includes(t))
+      .sort((a,b) => b.winPct - a.winPct || (b.pf - b.pa) - (a.pf - a.pa));
+    const wildcards = remaining.slice(0, 2);
+    const seeded = [...divWinnersInConf, ...wildcards]
+      .sort((a,b) => b.winPct - a.winPct || (b.pf - b.pa) - (a.pf - a.pa))
+      .map((t, i) => ({ ...t, seed: i + 1, divWinner: divWinnersInConf.includes(t), wildcard: wildcards.includes(t) }));
+    confSeeds[conf] = seeded;
+  }
+
+  // Compute status for each team
+  const teamStatus = {};
+  for (const t of all){
+    const conf = confSeeds[t.conf];
+    const seeded = conf.find(s => s.team === t.team);
+    let status, magic = null;
+    if (seeded){
+      status = seeded.divWinner ? 'div-winner' : 'wild-card';
+      // Magic number: wins needed to clinch their spot (rough — assumes nearest challenger keeps winning)
+      const challengers = all.filter(x => x.conf === t.conf && x.team !== t.team && !conf.find(s => s.team === x.team));
+      const topChal = challengers.sort((a,b) => b.winPct - a.winPct)[0];
+      magic = topChal ? Math.max(1, topChal.maxWins - t.w + 1) : null;
+    } else if (t.maxWins >= confSeeds[t.conf][3].w){
+      status = 'in-the-hunt';
+    } else {
+      status = 'eliminated';
+    }
+    teamStatus[t.team] = { status, magic, ...t };
+    delete teamStatus[t.team].team;
+  }
+
+  // Build bracket projection
+  const bracket = {};
+  for (const conf of Object.keys(confSeeds)){
+    const s = confSeeds[conf];
+    bracket[conf] = {
+      wildCard: [
+        { higher: s[0], lower: s[3] }, // 1 vs 4
+        { higher: s[1], lower: s[2] }, // 2 vs 3
+      ],
+      championship: { higher: s[0], lower: s[1] }, // projected after WC round
+    };
+  }
+
+  // Bowl projections (top 8 not in playoffs, sorted by winPct)
+  const playoffTeams = new Set([].concat(...Object.values(confSeeds)).map(t => t.team));
+  const bowlEligible = all
+    .filter(t => !playoffTeams.has(t.team) && t.w >= 6)
+    .sort((a,b) => b.winPct - a.winPct || (b.pf - b.pa) - (a.pf - a.pa));
+  const bowls = [
+    { name: 'PCFL Holiday Bowl',   tier: 1 },
+    { name: 'Sunshine Bowl',       tier: 2 },
+    { name: 'Heartland Bowl',      tier: 3 },
+    { name: 'Frontier Bowl',       tier: 4 },
+  ];
+  const bowlProjections = bowls.map((b, i) => ({
+    ...b,
+    teams: [bowlEligible[i*2], bowlEligible[i*2+1]].filter(Boolean).map(t => t.team),
+  })).filter(b => b.teams.length === 2);
+
+  return {
+    season: +season, throughWeek: wk, regularWeeks: totalRegularWeeks,
+    confSeeds, teamStatus, bracket, bowlProjections,
+    bowlEligible: bowlEligible.map(t => t.team),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Main                                                                */
 /* ------------------------------------------------------------------ */
-function main(){
+async function main(){
   const seasons = readdirSync(DROPS).filter(d=>/^\d{4}$/.test(d));
   const videos = parseVideos(join(ROOT,'scripts','yt-feed.xml'));
   const manifest = { seasons: [] }; // no timestamp: keep CI output deterministic so the bot only commits real data changes
@@ -499,6 +824,7 @@ function main(){
   writeFileSync(join(DATA,'videos.json'), JSON.stringify(videos,null,1));
 
   for (const season of seasons){
+    const weekJsonsForSeason = [];   // collected for SoS + playoff after the week loop
     const weekDirs = readdirSync(join(DROPS,season)).filter(d=>/^week\d+$/.test(d))
       .sort((a,b)=>num(a)-num(b));
     const weeks = [];
@@ -574,6 +900,21 @@ function main(){
         if (pg) powLine = findPlayerLine(pg, gameData.playerOfWeek);
       }
 
+      // -------------- AI generation (recaps + wrap-up) ----------
+      if (AI.enabled && gameData.games.length){
+        const recapResults = await Promise.all(gameData.games.map(g => aiRecap(g, week, season)));
+        for (let i = 0; i < gameData.games.length; i++){
+          const ai = recapResults[i];
+          if (ai) gameData.games[i].aiStory = ai;
+        }
+        console.log(`  ai: ${recapResults.filter(Boolean).length}/${gameData.games.length} recaps generated`);
+      }
+      let weeklyWrap = null;
+      if (AI.enabled && gameData.games.length){
+        weeklyWrap = await aiWeeklyWrap(gameData.games, week, season, standData.powerRankings);
+        if (weeklyWrap) console.log(`  ai: weekly wrap-up generated`);
+      }
+
       const weekJson = {
         season: +season, week, date: standData.date,
         playerOfWeek: gameData.playerOfWeek ? { ...gameData.playerOfWeek, line: powLine } : null,
@@ -585,20 +926,62 @@ function main(){
         teamSeasonStats: seasonStats.teamStats,
         nextWeek: { week: week+1, games: nextWeekGames },
         logFiles: logFiles.sort(),   // all .log filenames for this week (download index)
+        weeklyWrap,                  // AI-written weekly column, null if AI disabled
+        aiGenerated: AI.enabled,
       };
       const outDir = join(DATA, season);
       mkdirSync(outDir, { recursive: true });
       writeFileSync(join(outDir, `week${week}.json`), JSON.stringify(weekJson));
+      weekJsonsForSeason.push(weekJson);
       weeks.push(week);
       prevRanks = new Map(standData.powerRankings.map(p=>[p.team,p.rank]));
       console.log(`✓ ${season} week ${week}: ${gameData.games.length} games, ${standData.powerRankings.length} ranked, ${Object.keys(seasonStats.leaders).filter(k=>seasonStats.leaders[k]?.length).length} leader boards`);
+
+      // -------------- AI previews for NEXT week ------------------
+      if (AI.enabled && nextWeekGames.length){
+        // Build a recent-results snapshot per team (last 2 games)
+        const recent = {};
+        for (const g of gameData.games){
+          const winner = g.away.score > g.home.score ? g.away : g.home;
+          const loser  = g.away.score > g.home.score ? g.home : g.away;
+          (recent[winner.team] ??= []).push({ opp: teamName(loser.team), result: 'W', score: `${winner.score}-${loser.score}` });
+          (recent[loser.team]  ??= []).push({ opp: teamName(winner.team), result: 'L', score: `${loser.score}-${winner.score}` });
+        }
+        const previewResults = await Promise.all(nextWeekGames.map(g =>
+          aiPreview(g, week + 1, season,
+            records, Object.fromEntries(standData.powerRankings.map(r => [r.team, r.rank])),
+            recent)));
+        const previewsJson = {
+          season: +season, week: week + 1, generated: standData.date,
+          games: nextWeekGames.map((g, i) => previewResults[i] ? { ...g, ...previewResults[i] } : g).filter(Boolean),
+        };
+        // Game of the Week = highest predicted confidence among ranked games
+        const ranked = previewsJson.games.filter(g => g.prediction);
+        if (ranked.length){
+          previewsJson.gameOfWeek = ranked.sort((a, b) =>
+            (b.prediction.confidence ?? 0) - (a.prediction.confidence ?? 0))[0];
+        }
+        const prevDir = join(outDir, 'previews');
+        mkdirSync(prevDir, { recursive: true });
+        writeFileSync(join(prevDir, `week${week + 1}.json`), JSON.stringify(previewsJson));
+        console.log(`  ai: ${previewResults.filter(Boolean).length}/${nextWeekGames.length} previews for week ${week + 1}`);
+      }
     }
 
     if (latestSchedule) writeFileSync(join(DATA,season,'schedule.json'), JSON.stringify(latestSchedule));
     if (latestRosters) writeFileSync(join(DATA,season,'rosters.json'), JSON.stringify(latestRosters));
+
+    // -------------- Predictive engine (per season) ---------------
+    if (latestSchedule && weekJsonsForSeason.length){
+      const sos = computeSoS(season, latestSchedule, weekJsonsForSeason);
+      if (sos){ writeFileSync(join(DATA, season, 'sos.json'), JSON.stringify(sos)); console.log(`✓ ${season} SoS computed for ${Object.keys(sos).length} teams`); }
+      const playoffs = computePlayoffPicture(season, latestSchedule, weekJsonsForSeason);
+      if (playoffs){ writeFileSync(join(DATA, season, 'playoffs.json'), JSON.stringify(playoffs)); console.log(`✓ ${season} playoff picture computed (through week ${playoffs.throughWeek})`); }
+    }
+
     manifest.seasons.push({ year:+season, weeks, latest: weeks[weeks.length-1] ?? null });
   }
   writeFileSync(join(DATA,'manifest.json'), JSON.stringify(manifest,null,1));
   console.log('✓ manifest written');
 }
-main();
+main().catch(e => { console.error(e); process.exit(1); });

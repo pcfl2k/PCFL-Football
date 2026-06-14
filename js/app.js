@@ -335,9 +335,17 @@ VIEWS.home = async function(){
 
   const leaders = LEADER_DEFS.slice(0,6).map(d => leaderCard(d, wk.leaders[d.key])).join('');
 
+  const wrapHTML = wk.weeklyWrap ? `
+    <div class="section-h"><span class="bar"></span><h2>${esc(wk.weeklyWrap.headline||'Week '+wk.week+' Wrap')}</h2><span class="sub">PCFL Network AI Analyst</span></div>
+    <div class="card reveal weekly-wrap">
+      ${wk.weeklyWrap.subhead ? `<div class="ww-sub">${esc(wk.weeklyWrap.subhead)}</div>` : ''}
+      ${(wk.weeklyWrap.body||[]).map(p=>`<p>${esc(p)}</p>`).join('')}
+    </div>` : '';
+
   return `
     ${heroHTML}
     ${potwCard(wk)}
+    ${wrapHTML}
     <div class="home-grid">
       <div>
         <div class="section-h"><span class="bar"></span><h2>Top Stories</h2><span class="sub">Week ${wk.week} · ${fmtDate(wk.date)}</span><a class="more" href="#/scores">All Scores →</a></div>
@@ -415,8 +423,16 @@ VIEWS.game = async function(season, week, id, q){
 
   const tabContent = {
     video: g.videoId ? `<div class="video-shell reveal in"><iframe src="https://www.youtube.com/embed/${g.videoId}?rel=0" title="PCFL Network broadcast" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>` : '',
-    recap: `<div class="card recap-card reveal in"><div class="cat" style="color:var(--red);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">PCFL Network · Game Recap</div>
-      <h2>${esc(g.story.headline)}</h2>${g.story.body.map(p=>`<p>${esc(p)}</p>`).join('')}</div>`,
+    recap: (() => {
+      const s = g.aiStory || g.story;
+      const isAI = !!g.aiStory;
+      const extras = isAI ? `
+        ${g.aiStory.turningPoint ? `<div class="recap-cut"><div class="lbl">Turning point</div><p>${esc(g.aiStory.turningPoint)}</p></div>` : ''}
+        ${g.aiStory.unsungHero ? `<div class="recap-cut"><div class="lbl">Unsung hero</div><p><b>${esc(g.aiStory.unsungHero.name)}</b> <span style="color:var(--muted-2)">(${esc(T(g.aiStory.unsungHero.team).abbr)})</span> — ${esc(g.aiStory.unsungHero.why)}</p></div>` : ''}
+      ` : '';
+      return `<div class="card recap-card reveal in"><div class="cat" style="color:var(--red);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">PCFL Network · Game Recap ${isAI ? '· <span style="color:var(--gold)">AI Analyst</span>' : ''}</div>
+        <h2>${esc(s.headline)}</h2>${s.body.map(p=>`<p>${esc(p)}</p>`).join('')}${extras}</div>`;
+    })(),
     box: `<div class="card reveal in"><div class="box-2col">
       <div><a href="#/teams/${g.away.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></a>${boxSide('away')}</div>
       <div><a href="#/teams/${g.home.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.home.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(H.name)}</b></a>${boxSide('home')}</div>
@@ -899,6 +915,305 @@ VIEWS.history = async function(){
     <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>League History</h2><span class="sub">${App.season} season archive</span></div>
     <div class="award-grid">${weekCards.join('')}</div>
     <div class="empty card" style="margin-top:26px"><b>Dynasty records, champions & Hall of Fame</b>Coming as seasons are archived. Every weekly drop is preserved forever in the PCFL data vault.</div>`;
+};
+
+/* ----------------------------- preview --------------------------- */
+VIEWS.preview = async function(){
+  const wk = await weekData();
+  let prev = null;
+  try { prev = await getJSON(`data/${App.season}/previews/week${App.week}.json`); } catch { prev = null; }
+  if (!prev || !prev.games?.length){
+    return `<div class="empty card" style="margin-top:30px"><b>No preview generated for Week ${App.week} yet</b>
+      Previews are written by the PCFL Network AI analyst after the previous week's drop. If the AI key isn't configured, this page stays blank for the week.</div>`;
+  }
+  const gotw = prev.gameOfWeek;
+  const ranks = ranksOf(wk);
+
+  const heroHTML = gotw ? (() => {
+    const A = T(gotw.away), H = T(gotw.home);
+    const pred = gotw.prediction;
+    const predWinnerSlug = pred?.winner;
+    return `<div class="hero reveal" style="--hero-a:${A.colors.primary};--hero-b:${H.colors.primary}">
+      <div class="bg"></div><div class="grid-lines"></div><div class="sheen"></div>
+      <div class="chyron"><span class="dot"></span> PCFL Network · Game of the Week · Week ${App.week} Preview</div>
+      <div class="hero-inner">
+        <a class="side" href="#/teams/${gotw.away}">
+          <img src="${logo(gotw.away,true)}" onerror="this.src='${logo(gotw.away)}'" alt="">
+          <div><div class="tname">${esc(A.name)}</div><div class="tsub">${rankChip(ranks,gotw.away)}${esc(A.nickname)} · ${wk.records[gotw.away]||''}</div></div>
+        </a>
+        <div class="mid">
+          <div class="status" style="color:var(--gold)">${pred?.confidence != null ? `${Math.round(pred.confidence*100)}% confidence` : 'Preview'}</div>
+          <div class="scores">
+            ${pred?.score ? `<span class="score">${pred.score.split('-')[0]}</span><span class="dash">–</span><span class="score">${pred.score.split('-')[1]}</span>` : '<span class="score">?</span><span class="dash">–</span><span class="score">?</span>'}
+          </div>
+          ${pred?.winner ? `<div style="margin-top:8px;font-family:var(--font-head);color:#fff;font-size:11px;letter-spacing:.18em;text-transform:uppercase">Projected: ${esc(T(predWinnerSlug).name)}</div>` : ''}
+        </div>
+        <a class="side right" href="#/teams/${gotw.home}">
+          <img src="${logo(gotw.home,true)}" onerror="this.src='${logo(gotw.home)}'" alt="">
+          <div><div class="tname">${esc(H.name)}</div><div class="tsub">${rankChip(ranks,gotw.home)}${esc(H.nickname)} · ${wk.records[gotw.home]||''}</div></div>
+        </a>
+      </div>
+      ${gotw.headline ? `<div style="background:rgba(0,0,0,.32);padding:18px 28px 22px;color:#fff">
+        <div style="font-family:var(--font-head);font-size:18px;margin-bottom:6px">${esc(gotw.headline)}</div>
+        <div style="font-size:13.5px;color:rgba(255,255,255,.78)">${esc(gotw.subhead||'')}</div>
+      </div>` : ''}
+    </div>`;
+  })() : '';
+
+  const cards = prev.games.filter(g => g.id !== gotw?.id).map(g => {
+    if (!g.headline) return ''; // skip games without AI content
+    const A = T(g.away), H = T(g.home), pred = g.prediction;
+    return `<div class="card reveal preview-card">
+      <div class="prev-top">
+        <a href="#/teams/${g.away}" class="prev-team"><img src="${logo(g.away)}" alt=""><b>${esc(A.name)}</b><span>${wk.records[g.away]||''}</span></a>
+        <span class="prev-at">at</span>
+        <a href="#/teams/${g.home}" class="prev-team right"><img src="${logo(g.home)}" alt=""><b>${esc(H.name)}</b><span>${wk.records[g.home]||''}</span></a>
+      </div>
+      <h3 class="prev-head">${esc(g.headline)}</h3>
+      ${g.subhead ? `<div class="prev-sub">${esc(g.subhead)}</div>` : ''}
+      <div class="prev-body">${(g.body||[]).map(p=>`<p>${esc(p)}</p>`).join('')}</div>
+      <div class="prev-meta">
+        ${pred ? `<div class="prev-pred"><span class="lbl">Projected</span> <b>${esc(T(pred.winner).name)} ${esc(pred.score||'')}</b> <span class="conf">${pred.confidence!=null?`(${Math.round(pred.confidence*100)}%)`:''}</span></div>` : ''}
+        ${g.xFactor ? `<div class="prev-x"><span class="lbl">X-factor</span> ${esc(T(g.xFactor.team).abbr)} ${esc(g.xFactor.role||'')} — ${esc(g.xFactor.why||'')}</div>` : ''}
+        ${g.keyMatchup ? `<div class="prev-key"><span class="lbl">Key matchup</span> ${esc(g.keyMatchup)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `${heroHTML}
+    <div class="section-h"><span class="bar"></span><h2>Week ${App.week} Previews</h2><span class="sub">AI Network analyst column</span></div>
+    <div class="preview-grid">${cards || `<div class="empty">No additional previews ready.</div>`}</div>`;
+};
+
+/* ----------------------------- playoffs -------------------------- */
+VIEWS.playoffs = async function(){
+  let p = null;
+  try { p = await getJSON(`data/${App.season}/playoffs.json`); } catch { p = null; }
+  if (!p){
+    return `<div class="empty card" style="margin-top:30px"><b>Playoff picture not available</b>Run a weekly drop to compute the bracket.</div>`;
+  }
+  const remaining = Math.max(0, p.regularWeeks - p.throughWeek);
+  const seedRow = s => `
+    <div class="seed-row ${s.divWinner?'div-winner':'wild-card'}">
+      <span class="seed-num">${s.seed}</span>
+      <a href="#/teams/${s.team}" style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+        <img src="${logo(s.team)}" alt="" style="width:26px;height:26px">
+        <span class="seed-nm">${esc(T(s.team).name)}</span>
+      </a>
+      <span class="seed-rec">${s.w}-${s.l}</span>
+      <span class="seed-pf">${s.pf}/${s.pa}</span>
+      <span class="seed-badge ${s.divWinner?'dw':'wc'}">${s.divWinner?'Div Winner':'Wild Card'}</span>
+    </div>`;
+
+  const matchupCard = m => m.higher && m.lower ? `
+    <div class="bracket-match">
+      <div class="bm-row"><span class="bm-seed">#${m.higher.seed}</span><img src="${logo(m.higher.team)}" alt=""><span>${esc(T(m.higher.team).abbr)}</span><span class="bm-rec">${m.higher.w}-${m.higher.l}</span></div>
+      <div class="bm-row"><span class="bm-seed">#${m.lower.seed}</span><img src="${logo(m.lower.team)}" alt=""><span>${esc(T(m.lower.team).abbr)}</span><span class="bm-rec">${m.lower.w}-${m.lower.l}</span></div>
+    </div>` : `<div class="bracket-match" style="opacity:.35"><div class="bm-row"><span>TBD</span></div></div>`;
+
+  const confColumn = (conf, seeds) => `
+    <div class="bracket-conf">
+      <div class="bracket-conf-hd">${esc(conf)} Conference</div>
+      <div class="bracket-stage">
+        <div class="stage-lbl">Wild card</div>
+        ${matchupCard(p.bracket[conf].wildCard[0])}
+        ${matchupCard(p.bracket[conf].wildCard[1])}
+      </div>
+      <div class="bracket-stage">
+        <div class="stage-lbl">Conf championship</div>
+        ${matchupCard(p.bracket[conf].championship)}
+      </div>
+      <div class="bracket-seeds">
+        ${seeds.map(seedRow).join('')}
+      </div>
+    </div>`;
+
+  const bowlRow = b => `
+    <div class="bowl-row">
+      <div class="bowl-name">${esc(b.name)}</div>
+      <div class="bowl-teams">
+        ${b.teams.map(t => `<a href="#/teams/${t}" style="display:inline-flex;align-items:center;gap:6px"><img src="${logo(t)}" alt="" style="width:20px;height:20px"><b>${esc(T(t).abbr)}</b></a>`).join('<span class="bowl-vs">vs</span>')}
+      </div>
+    </div>`;
+
+  const hunt = Object.entries(p.teamStatus).filter(([,t])=>t.status==='in-the-hunt')
+    .sort((a,b)=>b[1].winPct - a[1].winPct).slice(0,8);
+  const eliminated = Object.entries(p.teamStatus).filter(([,t])=>t.status==='eliminated');
+
+  return `
+    <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Playoff Picture</h2>
+      <span class="sub">Through Week ${p.throughWeek} · ${remaining} regular-season game${remaining===1?'':'s'} remaining</span></div>
+
+    <div class="bracket-grid">
+      ${confColumn('Western', p.confSeeds.Western || [])}
+      ${confColumn('Eastern', p.confSeeds.Eastern || [])}
+    </div>
+
+    ${p.bowlProjections?.length ? `
+    <div class="section-h"><span class="bar"></span><h2>Bowl Projections</h2><span class="sub">For teams ≥6 wins not in the playoff field</span></div>
+    <div class="card reveal">
+      ${p.bowlProjections.map(bowlRow).join('')}
+    </div>` : ''}
+
+    ${hunt.length ? `
+    <div class="section-h"><span class="bar"></span><h2>In the Hunt</h2><span class="sub">Mathematically alive</span></div>
+    <div class="card reveal">
+      ${hunt.map(([slug,t]) => `
+        <div class="hunt-row">
+          <a href="#/teams/${slug}" style="display:flex;align-items:center;gap:8px;flex:1"><img src="${logo(slug)}" alt="" style="width:22px;height:22px"><b>${esc(T(slug).name)}</b></a>
+          <span style="font-family:var(--font-head);color:var(--muted)">${t.w}-${t.l}</span>
+          <span style="font-size:11px;color:var(--muted-2)">max ${t.maxWins} wins</span>
+        </div>`).join('')}
+    </div>` : ''}
+
+    ${eliminated.length ? `
+    <div class="section-h"><span class="bar"></span><h2>Eliminated</h2></div>
+    <div class="card reveal" style="opacity:.7">
+      ${eliminated.map(([slug,t]) => `
+        <div class="hunt-row">
+          <a href="#/teams/${slug}" style="display:flex;align-items:center;gap:8px;flex:1"><img src="${logo(slug)}" alt="" style="width:22px;height:22px"><span>${esc(T(slug).name)}</span></a>
+          <span style="font-family:var(--font-head);color:var(--muted-2)">${t.w}-${t.l}</span>
+        </div>`).join('')}
+    </div>` : ''}
+  `;
+};
+
+/* ----------------------------- compare --------------------------- */
+VIEWS.compare = async function(_, __, ___, q){
+  const wk = await weekData();
+  const sos = await getJSON(`data/${App.season}/sos.json`).catch(() => ({}));
+  const aSlug = q.get('a') || 'texas';
+  const bSlug = q.get('b') || 'notre-dame';
+  const A = T(aSlug), B = T(bSlug);
+
+  const standOf = slug => {
+    for (const c of wk.standings) for (const d of c.divisions){
+      const tm = d.teams.find(t => t.team === slug);
+      if (tm) return tm;
+    }
+    return null;
+  };
+  const sA = standOf(aSlug), sB = standOf(bSlug);
+  const teamStats = side => wk.teamSeasonStats || {};
+  const tsLookup = (cat, slug) => (wk.teamSeasonStats?.[cat] || []).find(r => r.team === slug) || {};
+
+  const compareRow = (label, va, vb, fmt = v => v, dir = 'higher') => {
+    const va2 = +va || 0, vb2 = +vb || 0;
+    const aBetter = dir === 'higher' ? va2 > vb2 : va2 < vb2;
+    const bBetter = dir === 'higher' ? vb2 > va2 : vb2 < va2;
+    return `<div class="cmp-row">
+      <span class="cmp-val ${aBetter?'win':''}">${fmt(va)}</span>
+      <span class="cmp-lbl">${esc(label)}</span>
+      <span class="cmp-val right ${bBetter?'win':''}">${fmt(vb)}</span>
+    </div>`;
+  };
+
+  // head-to-head: any game involving both teams (from the schedule)
+  const sched = await getJSON(`data/${App.season}/schedule.json`).catch(() => []);
+  const h2h = [];
+  for (const w of sched) for (const g of w.games){
+    if ((g.away === aSlug && g.home === bSlug) || (g.away === bSlug && g.home === aSlug)){
+      h2h.push({ ...g, week: w.week, date: w.date });
+    }
+  }
+
+  const teamOpts = App.teams.map(t => `<option value="${t.slug}">${esc(t.name)}</option>`).join('');
+  const passingA = tsLookup('passing', aSlug), passingB = tsLookup('passing', bSlug);
+  const rushingA = tsLookup('rushing', aSlug), rushingB = tsLookup('rushing', bSlug);
+  const scoringA = tsLookup('scoring', aSlug), scoringB = tsLookup('scoring', bSlug);
+  const totalYdsA = tsLookup('totalYards', aSlug), totalYdsB = tsLookup('totalYards', bSlug);
+
+  return `
+    <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Team Comparison</h2><span class="sub">Head-to-head breakdown</span></div>
+
+    <div class="cmp-pickers">
+      <div>
+        <label>Team A</label>
+        <select onchange="location.hash='#/compare?a='+this.value+'&b=${bSlug}'">
+          ${App.teams.map(t => `<option value="${t.slug}" ${t.slug===aSlug?'selected':''}>${esc(t.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label>Team B</label>
+        <select onchange="location.hash='#/compare?a=${aSlug}&b='+this.value">
+          ${App.teams.map(t => `<option value="${t.slug}" ${t.slug===bSlug?'selected':''}>${esc(t.name)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="cmp-hero">
+      <a href="#/teams/${aSlug}" class="cmp-side" style="background:linear-gradient(135deg, ${A.colors.primary}, #0d0f13 130%)">
+        <img src="${logo(aSlug,true)}" onerror="this.src='${logo(aSlug)}'" alt="">
+        <div><div class="cmp-name">${esc(A.name)}</div><div class="cmp-nick">${esc(A.nickname)}</div></div>
+      </a>
+      <div class="cmp-vs">VS</div>
+      <a href="#/teams/${bSlug}" class="cmp-side right" style="background:linear-gradient(135deg, ${B.colors.primary}, #0d0f13 130%)">
+        <img src="${logo(bSlug,true)}" onerror="this.src='${logo(bSlug)}'" alt="">
+        <div style="text-align:right"><div class="cmp-name">${esc(B.name)}</div><div class="cmp-nick">${esc(B.nickname)}</div></div>
+      </a>
+    </div>
+
+    <div class="card reveal cmp-card">
+      <div class="cmp-section">Season record</div>
+      ${compareRow('Wins', sA?.w, sB?.w)}
+      ${compareRow('Losses', sA?.l, sB?.l, v=>v, 'lower')}
+      ${compareRow('Points for', sA?.pf, sB?.pf)}
+      ${compareRow('Points against', sA?.pa, sB?.pa, v=>v, 'lower')}
+      ${compareRow('Point diff', (sA?.pf-sA?.pa), (sB?.pf-sB?.pa), v => (v>0?'+':'') + v)}
+      ${compareRow('Streak', sA?.streak, sB?.streak, esc)}
+      ${compareRow('Strength of schedule', sos[aSlug], sos[bSlug], v => v ? (v*100).toFixed(1)+'%' : '—')}
+    </div>
+
+    <div class="card reveal cmp-card">
+      <div class="cmp-section">Offense</div>
+      ${compareRow('Pass yards', passingA.yds, passingB.yds)}
+      ${compareRow('Pass TDs', passingA.td, passingB.td)}
+      ${compareRow('Passer rating', passingA.rtg, passingB.rtg)}
+      ${compareRow('Rush yards', rushingA.yds, rushingB.yds)}
+      ${compareRow('Rush TDs', rushingA.td, rushingB.td)}
+      ${compareRow('Total yards/G', totalYdsA.ydsGame, totalYdsB.ydsGame)}
+      ${compareRow('Points/G', scoringA.ptsGame, scoringB.ptsGame)}
+    </div>
+
+    ${h2h.length ? `
+    <div class="card reveal cmp-card">
+      <div class="cmp-section">Head-to-head</div>
+      ${h2h.map(g => {
+        const aIsAway = g.away === aSlug;
+        const sa = g.final ? (aIsAway ? g.awayScore : g.homeScore) : null;
+        const sb = g.final ? (aIsAway ? g.homeScore : g.awayScore) : null;
+        return `<div class="h2h-row">
+          <span>Week ${g.week} · ${esc(g.date||'')}</span>
+          <span>${g.final ? `<b>${sa}</b>–<b>${sb}</b> at ${esc(T(aIsAway?g.home:g.away).abbr)}` : 'Scheduled'}</span>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+  `;
+};
+
+/* ----------------------------- podcast --------------------------- */
+VIEWS.podcast = async function(){
+  // Phase 3 skeleton — when ENABLE_PODCAST_AUDIO is set and audio files exist,
+  // this view lists weekly episodes. For now it's a placeholder.
+  return `
+    <div class="hero reveal" style="--hero-a:#d6001c;--hero-b:#1c2027;margin-top:22px">
+      <div class="bg"></div><div class="grid-lines"></div><div class="sheen"></div>
+      <div class="hero-inner" style="padding:36px 40px">
+        <div>
+          <div class="chyron" style="margin:0 0 14px"><span class="dot"></span> PCFL Network · Audio</div>
+          <div class="tname" style="font-size:38px">PCFL Network Weekly Podcast</div>
+          <div class="tsub" style="margin-top:10px">AI-narrated game wrap-ups, coming soon.</div>
+        </div>
+      </div>
+    </div>
+    <div class="section-h"><span class="bar"></span><h2>Status</h2></div>
+    <div class="card reveal" style="padding:24px 28px;max-width:760px">
+      <p style="color:var(--muted);font-size:14.5px;line-height:1.7;margin:0">
+        The PCFL Network is preparing an audio version of the weekly wrap-up. Each episode
+        will be AI-narrated, ~3-4 minutes long, and dropped after the Friday sim. An RSS feed
+        will be available for podcast clients. Stay tuned.
+      </p>
+    </div>`;
 };
 
 window.setWeek = w => { App.week = w; renderChrome(); renderTicker(); };

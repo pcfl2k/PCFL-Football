@@ -72,9 +72,9 @@ header.main .wrap { display: flex; align-items: center; height: 62px; gap: 22px;
 nav.primary { display: flex; align-items: stretch; height: 100%; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; padding-right: 18px; }
 nav.primary::-webkit-scrollbar { display: none; }
 nav.primary a {
-  display: flex; align-items: center; padding: 0 11px; color: #c9ced6;
-  font-family: var(--font-head); font-size: 13.5px; text-transform: uppercase;
-  letter-spacing: .06em; position: relative; white-space: nowrap; transition: color .15s;
+  display: flex; align-items: center; padding: 0 9px; color: #c9ced6;
+  font-family: var(--font-head); font-size: 12.5px; text-transform: uppercase;
+  letter-spacing: .05em; position: relative; white-space: nowrap; transition: color .15s;
 }
 nav.primary a:hover { color: #fff; }
 nav.primary a.active { color: #fff; }
@@ -456,6 +456,104 @@ main { min-height: 70vh; }
 .recap-card { padding: 24px 28px; }
 .recap-card h2 { font-size: 24px; margin-bottom: 12px; text-transform: none; }
 .recap-card p { color: #2c323a; font-size: 14.5px; line-height: 1.75; }
+.recap-cut { margin-top: 18px; padding: 14px 16px; background: linear-gradient(135deg, rgba(241,190,72,.08), rgba(214,0,28,.04)); border-left: 3px solid var(--gold); border-radius: 0 8px 8px 0; }
+.recap-cut .lbl { font-family: var(--font-head); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #8a6a14; margin-bottom: 4px; }
+.recap-cut p { font-size: 13.5px; color: var(--text); margin: 0; line-height: 1.6; }
+
+/* ---------------------------------------------------------------- */
+/* Weekly wrap-up on the home page                                   */
+/* ---------------------------------------------------------------- */
+.weekly-wrap { padding: 22px 26px; border-left: 4px solid var(--accent); }
+.weekly-wrap .ww-sub { font-size: 14.5px; color: var(--muted); margin-bottom: 12px; font-style: italic; }
+.weekly-wrap p { font-size: 14.5px; color: #2c323a; line-height: 1.75; margin: 0 0 10px; }
+.weekly-wrap p:last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------- */
+/* Preview page                                                      */
+/* ---------------------------------------------------------------- */
+.preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.preview-card { padding: 18px 20px; }
+.prev-top { display: grid; grid-template-columns: 1fr 30px 1fr; align-items: center; gap: 10px; margin-bottom: 14px; }
+.prev-team { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.prev-team.right { flex-direction: row-reverse; text-align: right; }
+.prev-team img { width: 28px; height: 28px; flex-shrink: 0; }
+.prev-team b { font-family: var(--font-head); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prev-team span { font-size: 10.5px; color: var(--muted-2); margin-left: 6px; }
+.prev-team.right span { margin-left: 0; margin-right: 6px; }
+.prev-at { text-align: center; font-family: var(--font-display); color: var(--muted-2); font-size: 18px; }
+.prev-head { font-family: var(--font-head); font-size: 17px; line-height: 1.3; text-transform: none; margin-bottom: 4px; }
+.prev-sub { color: var(--muted); font-size: 12.5px; margin-bottom: 12px; font-style: italic; }
+.prev-body p { font-size: 13.5px; line-height: 1.65; color: #2c323a; margin: 0 0 8px; }
+.prev-meta { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.prev-meta .lbl { display: inline-block; font-family: var(--font-head); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); margin-right: 6px; }
+.prev-pred b { font-family: var(--font-head); color: var(--accent); }
+.prev-pred .conf { color: var(--muted); font-size: 11px; }
+
+/* ---------------------------------------------------------------- */
+/* Playoff bracket                                                   */
+/* ---------------------------------------------------------------- */
+.bracket-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 6px; }
+.bracket-conf { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.bracket-conf-hd { background: var(--ink-2); color: #fff; padding: 12px 16px; font-family: var(--font-head); font-size: 13px; letter-spacing: .08em; }
+.bracket-stage { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+.bracket-stage .stage-lbl { font-family: var(--font-head); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+.bracket-match { background: #fafbfc; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; margin-bottom: 8px; }
+.bracket-match .bm-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.bracket-match .bm-row + .bm-row { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 3px; }
+.bracket-match .bm-seed { font-family: var(--font-head); font-size: 11px; color: var(--muted-2); width: 20px; }
+.bracket-match .bm-row img { width: 20px; height: 20px; }
+.bracket-match .bm-rec { margin-left: auto; font-family: var(--font-head); color: var(--muted); font-size: 12px; }
+.bracket-seeds { padding: 8px 14px 14px; }
+.seed-row { display: grid; grid-template-columns: 26px 1fr auto auto auto; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid #f0f2f4; font-size: 12.5px; }
+.seed-row:last-child { border-bottom: 0; }
+.seed-row .seed-num { font-family: var(--font-display); font-size: 22px; color: var(--ink); text-align: center; }
+.seed-row .seed-nm { font-weight: 600; }
+.seed-row .seed-rec { font-family: var(--font-head); color: var(--text); }
+.seed-row .seed-pf { color: var(--muted-2); font-size: 11px; }
+.seed-row .seed-badge { font-size: 9.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: .05em; }
+.seed-row .seed-badge.dw { background: #e3f5ea; color: #0a8f3c; }
+.seed-row .seed-badge.wc { background: #fef3da; color: #8a6a14; }
+.bowl-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); gap: 18px; }
+.bowl-row:last-child { border-bottom: 0; }
+.bowl-name { font-family: var(--font-head); font-size: 14px; flex: 1; }
+.bowl-teams { display: flex; align-items: center; gap: 10px; }
+.bowl-vs { color: var(--muted-2); font-family: var(--font-head); font-size: 11px; }
+.hunt-row { display: flex; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--line); gap: 14px; }
+.hunt-row:last-child { border-bottom: 0; }
+
+/* ---------------------------------------------------------------- */
+/* Team comparison page                                              */
+/* ---------------------------------------------------------------- */
+.cmp-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 18px; }
+.cmp-pickers label { display: block; font-size: 10px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .14em; margin-bottom: 4px; }
+.cmp-pickers select { width: 100%; appearance: none; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; font-family: var(--font-head); font-size: 14px; cursor: pointer; }
+.cmp-pickers select:hover { border-color: var(--accent); }
+.cmp-hero { display: grid; grid-template-columns: 1fr 48px 1fr; align-items: stretch; gap: 0; margin-bottom: 20px; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-2); }
+.cmp-side { display: flex; align-items: center; gap: 14px; padding: 22px 24px; color: #fff; }
+.cmp-side.right { flex-direction: row-reverse; }
+.cmp-side img { width: 60px; height: 60px; filter: drop-shadow(0 6px 12px rgba(0,0,0,.4)); }
+.cmp-name { font-family: var(--font-display); font-size: 26px; line-height: 1; }
+.cmp-nick { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; opacity: .8; margin-top: 4px; }
+.cmp-vs { background: var(--ink); color: var(--accent); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 22px; letter-spacing: .06em; }
+.cmp-card { padding: 0; margin-bottom: 14px; }
+.cmp-section { background: var(--ink-2); color: #fff; padding: 10px 16px; font-family: var(--font-head); font-size: 13px; letter-spacing: .08em; }
+.cmp-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 18px; padding: 10px 18px; border-bottom: 1px solid #f0f2f4; font-size: 13.5px; }
+.cmp-row:last-child { border-bottom: 0; }
+.cmp-val { font-family: var(--font-head); font-size: 17px; font-variant-numeric: tabular-nums; }
+.cmp-val.right { text-align: right; }
+.cmp-val.win { color: var(--accent); }
+.cmp-lbl { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-family: var(--font-head); text-align: center; min-width: 120px; }
+.h2h-row { display: flex; justify-content: space-between; padding: 10px 18px; border-bottom: 1px solid #f0f2f4; font-size: 13px; }
+.h2h-row:last-child { border-bottom: 0; }
+
+@media (max-width: 760px){
+  .bracket-grid { grid-template-columns: 1fr; }
+  .cmp-pickers { grid-template-columns: 1fr; }
+  .cmp-hero { grid-template-columns: 1fr; }
+  .cmp-vs { padding: 6px; }
+  .cmp-row { grid-template-columns: 1fr; text-align: center; gap: 4px; padding: 12px 14px; }
+  .cmp-val.right { text-align: center; }
+}
 .pog-strip {
   display: flex; align-items: center; gap: 14px; padding: 14px 18px;
   background: linear-gradient(120deg, rgba(241,190,72,.13), rgba(214,0,28,.07));
@@ -698,7 +796,8 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
   .pp-row .ptsbar, .pp-row .beat { display: none; }
   .home-grid aside.rail { margin-top: 10px !important; }
 }
-@media (max-width: 1080px){
+/* 13 nav items don't fit comfortably under ~1600px — hamburger takes over below */
+@media (max-width: 1599px){
   nav.primary, header.main .wk-select { display: none; }
   .hamburger { display: flex; }
   header.main .wrap { gap: 14px; }
