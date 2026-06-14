@@ -125,6 +125,7 @@ function gameCard(g, wk, ranks){
       ${g.videoId ? `<a href="#/game/${wk.season}/${wk.week}/${g.id}?t=video">▶ Replay</a>` : ''}
       <a href="#/game/${wk.season}/${wk.week}/${g.id}">Box Score</a>
       <a href="#/game/${wk.season}/${wk.week}/${g.id}?t=recap">Recap</a>
+      ${g.logFile ? `<a class="log-dl" href="data/${wk.season}/logs/week${wk.week}/${esc(g.logFile)}" download title="Download play-by-play log">↓ Log</a>` : ''}
     </div></div>`;
 }
 
@@ -688,6 +689,116 @@ VIEWS.media = async function(){
     <div class="section-h"><span class="bar"></span><h2>Live Channel Feed</h2></div>
     <div class="card reveal video-shell" style="padding-top:50%"><iframe src="https://www.youtube.com/embed/videoseries?list=UUCopjecFoHzlVp99e-3W2yA" title="PCFL Network uploads" allowfullscreen></iframe></div>`;
 };
+
+/* ------------------------------ logs ----------------------------- */
+let _jszipLoading = null;
+function ensureJSZip(){
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  if (_jszipLoading) return _jszipLoading;
+  return _jszipLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+    s.integrity = 'sha384-G2DI/LHi4kEAtQ91+SqM2bMP/+/EWMTM07nQXPwwBPdJiwUv9JpTRrtPUk+W/CKD';
+    s.crossOrigin = 'anonymous';
+    s.onload = () => resolve(window.JSZip);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+VIEWS.logs = async function(){
+  const wk = await weekData();
+  const logs = wk.logFiles || [];
+  const gamesByKey = new Map();
+  for (const g of wk.games){
+    if (g.logFile) gamesByKey.set(g.logFile, g);
+  }
+  const totalKB = logs.length ? '— ' + logs.length + ' files' : '— none uploaded yet';
+  const base = `data/${wk.season}/logs/week${wk.week}`;
+
+  const rows = logs.length ? logs.map(f => {
+    const g = gamesByKey.get(f);
+    if (g){
+      const A = T(g.away.team), H = T(g.home.team);
+      const win = g.away.score > g.home.score ? 'away' : 'home';
+      return `<a class="log-row" href="${base}/${esc(f)}" download>
+        <div class="log-row-game">
+          <img src="${logo(g.away.team)}" alt="">
+          <span class="${win==='away'?'win':''}">${esc(A.name)} <b>${g.away.score}</b></span>
+          <span class="vs">@</span>
+          <img src="${logo(g.home.team)}" alt="">
+          <span class="${win==='home'?'win':''}">${esc(H.name)} <b>${g.home.score}</b></span>
+        </div>
+        <div class="log-row-meta"><span class="log-fname">${esc(f)}</span><span class="log-dl-pill">↓ Download</span></div>
+      </a>`;
+    }
+    return `<a class="log-row" href="${base}/${esc(f)}" download>
+      <div class="log-row-game"><span style="color:var(--muted)">${esc(f)}</span></div>
+      <div class="log-row-meta"><span class="log-dl-pill">↓ Download</span></div>
+    </a>`;
+  }).join('') : `<div class="empty"><b>No game logs for this week yet</b>
+      The commissioner can publish them via the PCFL Updater.</div>`;
+
+  return `
+    <div class="hero reveal" style="--hero-a:#1c2027;--hero-b:#101317;margin-top:22px">
+      <div class="bg"></div><div class="grid-lines"></div><div class="sheen"></div>
+      <div class="hero-inner" style="padding:30px 36px;display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap">
+        <div>
+          <div class="chyron" style="margin:0 0 14px"><span class="dot"></span> PCFL Network · Game Logs Archive</div>
+          <div class="tname" style="font-size:38px">Play-by-play, every snap.</div>
+          <div class="tsub" style="margin-top:8px">${wk.season} Season · Week ${wk.week} ${esc(totalKB)}</div>
+        </div>
+        ${logs.length ? `<button class="btn primary" id="dl-all-zip">↓ Download All (.zip)</button>` : ''}
+      </div>
+    </div>
+
+    <div class="section-h"><span class="bar"></span><h2>Week ${wk.week} Game Logs</h2><span class="sub">FBPro98 play-by-play text logs</span></div>
+    <div class="logs-list">${rows}</div>
+
+    <div class="section-h"><span class="bar"></span><h2>About the logs</h2></div>
+    <div class="card reveal" style="padding:20px 24px;max-width:760px">
+      <p style="color:var(--muted);font-size:14px;line-height:1.7;margin:0">
+        Each <code style="background:#f0f2f4;padding:2px 6px;border-radius:4px;font-family:Consolas,monospace">.log</code>
+        file is the complete play-by-play simulation output from FBPro98 for that game — every snap, every formation,
+        every result, just as the engine produced it. Click any row above to download.
+        The <b>Download All</b> button bundles every log in this week into a single zip.
+      </p>
+    </div>`;
+};
+
+document.addEventListener('click', async e => {
+  if (e.target.id !== 'dl-all-zip') return;
+  const btn = e.target;
+  const originalText = btn.textContent;
+  btn.textContent = 'Loading…';
+  btn.disabled = true;
+  try {
+    const wk = await weekData();
+    const JSZip = await ensureJSZip();
+    const zip = new JSZip();
+    const base = `data/${wk.season}/logs/week${wk.week}`;
+    let i = 0;
+    for (const f of (wk.logFiles || [])){
+      btn.textContent = `Fetching ${++i}/${wk.logFiles.length}…`;
+      const r = await fetch(`${base}/${f}`);
+      if (r.ok) zip.file(f, await r.blob());
+    }
+    btn.textContent = 'Zipping…';
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `PCFL-${wk.season}-week${wk.week}-logs.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    btn.textContent = '✓ Downloaded';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2500);
+  } catch (err){
+    console.error(err);
+    btn.textContent = 'Download failed';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2500);
+  }
+});
 
 /* ----------------------------- history ---------------------------- */
 VIEWS.history = async function(){

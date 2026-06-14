@@ -392,6 +392,40 @@ main { min-height: 70vh; }
 .gcard .foot a:hover { background: #fbf3f4; }
 .gcard .foot a + a { border-left: 1px solid var(--line); }
 .gcard .foot span.na { color: var(--muted-2); border-left: 1px solid var(--line); }
+.gcard .foot a.log-dl { color: #0a8f3c; }
+.gcard .foot a.log-dl:hover { background: #ecf7f0; }
+
+/* ---------------------------------------------------------------- */
+/* Game Logs page                                                    */
+/* ---------------------------------------------------------------- */
+.logs-list { display: flex; flex-direction: column; gap: 8px; }
+.log-row {
+  display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px;
+  align-items: center; padding: 14px 18px; background: var(--panel);
+  border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow-1);
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+.log-row:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); border-color: #0a8f3c; }
+.log-row-game { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 14px; }
+.log-row-game img { width: 28px; height: 28px; flex-shrink: 0; }
+.log-row-game .vs { color: var(--muted-2); font-family: var(--font-head); font-size: 13px; }
+.log-row-game .win { font-weight: 700; }
+.log-row-game b { font-family: var(--font-head); font-size: 16px; margin-left: 4px; }
+.log-row-meta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.log-fname { font-family: Consolas, monospace; font-size: 11px; color: var(--muted-2); }
+.log-dl-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #fff; padding: 7px 14px; border-radius: 999px;
+  font-family: var(--font-head); font-size: 11.5px; letter-spacing: .08em; font-weight: 600;
+}
+.log-row:hover .log-dl-pill { box-shadow: 0 6px 14px rgba(16,185,129,.35); }
+
+@media (max-width: 640px){
+  .log-row { grid-template-columns: 1fr; gap: 8px; }
+  .log-row-game { font-size: 13px; }
+  .log-fname { display: none; }
+}
 
 /* ---------------------------------------------------------------- */
 /* Game center                                                       */

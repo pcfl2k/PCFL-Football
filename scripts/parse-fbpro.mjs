@@ -506,7 +506,24 @@ function main(){
       for (const c of standData.standings) for (const d of c.divisions) for (const tm of d.teams)
         records[tm.team] = `${tm.w}-${tm.l}${tm.t?`-${tm.t}`:''}`;
 
-      // attach stories + videos + next opponents
+      // discover play-by-play .log files for this week, if uploaded
+      const logsDir = join(DATA, season, 'logs', `week${week}`);
+      const logFiles = existsSync(logsDir)
+        ? readdirSync(logsDir).filter(f => f.endsWith('.log'))
+        : [];
+      const logMap = new Map();   // "away|home" -> filename, prefer higher-rev (re-sim)
+      for (const f of logFiles){
+        const m = f.match(/^(\d{2})W(\d{2})([A-Z]+)@([A-Z]+?)(\d?)\.log$/);
+        if (!m) continue;
+        const away = teamFrom(m[3]), home = teamFrom(m[4]);
+        if (!away || !home) continue;
+        const rev = m[5] ? +m[5] : 1;
+        const key = `${away}|${home}`;
+        const prev = logMap.get(key);
+        if (!prev || prev.rev < rev) logMap.set(key, { file: f, rev });
+      }
+
+      // attach stories + videos + next opponents + game logs
       const nextWeekGames = schedule.find(w=>w.week===week+1)?.games ?? [];
       for (const g of gameData.games){
         const nextOpp = nextWeekGames.find(x=>{
@@ -519,6 +536,10 @@ function main(){
           .sort((a,b)=>(b.rev??1)-(a.rev??1) || b.published.localeCompare(a.published));
         g.videoId = vids[0]?.id ?? null;
         g.playerOfGameLine = g.playerOfGame ? findPlayerLine(g, g.playerOfGame) : '';
+        // attach log file (orientation-agnostic: away@home OR home@away)
+        const lf = logMap.get(`${g.away.team}|${g.home.team}`)
+                ?? logMap.get(`${g.home.team}|${g.away.team}`);
+        g.logFile = lf ? lf.file : null;
       }
       // player of week stat line
       let powLine = '';
@@ -537,6 +558,7 @@ function main(){
         leaders: seasonStats.leaders,
         teamSeasonStats: seasonStats.teamStats,
         nextWeek: { week: week+1, games: nextWeekGames },
+        logFiles: logFiles.sort(),   // all .log filenames for this week (download index)
       };
       const outDir = join(DATA, season);
       mkdirSync(outDir, { recursive: true });
