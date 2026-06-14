@@ -53,11 +53,13 @@ jobs:
         run: node prod/scripts/parse-fbpro.mjs
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
       - name: Parse FBPro98 exports (staging)
         run: node staging/scripts/parse-fbpro.mjs
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
       - name: Commit regenerated production data
         if: github.ref == 'refs/heads/main'

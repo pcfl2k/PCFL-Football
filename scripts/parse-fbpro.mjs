@@ -489,43 +489,105 @@ function parseVideos(xmlPath){
 /* AI Content Layer (previews, recaps, weekly wrap-up)                  */
 /* ================================================================== */
 /*
- * Calls Anthropic's Messages API (Claude Haiku 4.5) to generate broadcast-
- * voice content from the deterministic JSON we've already produced.
+ * Calls HuggingFace's Inference Router (OpenAI-compatible) to generate
+ * broadcast-voice content from the deterministic JSON we've already
+ * produced. Defaults to Qwen 2.5 7B Instruct — open weights, no gating,
+ * free tier reliable for our weekly volume.
  *
  * Behavior:
- *   - If ANTHROPIC_API_KEY is unset, every helper returns null and the
- *     site falls back to the existing deterministic content. The build
- *     stays green either way.
+ *   - If HF_TOKEN (or HUGGINGFACE_TOKEN) is unset, every helper returns
+ *     null and the site falls back to the existing deterministic content.
+ *     The build stays green either way.
  *   - Calls are cached by SHA-256 of (model + prompt). The cache lives at
  *     data/<season>/ai-cache/<hash>.json and is checked into the repo, so
- *     CI never regenerates content for inputs it has already seen — costs
- *     stay at "first ever drop of week N" only.
- *   - All API calls run in parallel via Promise.all per week. A typical
- *     drop fires ~20 calls and finishes in ~10s.
+ *     CI never regenerates content for inputs it has already seen — free-
+ *     tier credits go further and rate limits aren't a concern week-over-
+ *     week.
+ *   - Open models are less reliable at "Return ONLY JSON" than Claude was,
+ *     so the JSON extractor is generous — it tries fenced blocks first,
+ *     then any {...} substring it can find.
+ *   - Rate-limit / cold-start failures degrade silently to deterministic
+ *     content. The build never fails because the AI was busy.
  */
 import { createHash } from 'node:crypto';
 
-const AI = {
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-  model: 'claude-haiku-4-5-20251001',
-  enabled: false,
-};
-AI.enabled = !!AI.apiKey;
-if (!AI.enabled) console.log('ℹ ANTHROPIC_API_KEY not set — AI content disabled (deterministic fallback in use).');
+// Provider auto-selection: Anthropic Claude is preferred when both are set
+// (better writing quality and the per-week cost is ~$0.12 — within "keep
+// costs low" by any reasonable definition). HuggingFace router is the free
+// alternative. Either provider is fine; the code just picks based on which
+// secret is configured.
+const AI = (() => {
+  const anthKey = process.env.ANTHROPIC_API_KEY || '';
+  const hfKey   = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN || '';
+  if (anthKey) return {
+    provider: 'anthropic',
+    apiKey: anthKey,
+    model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
+    endpoint: 'https://api.anthropic.com/v1/messages',
+    enabled: true,
+  };
+  if (hfKey) return {
+    provider: 'huggingface',
+    apiKey: hfKey,
+    model: process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct',
+    endpoint: 'https://router.huggingface.co/v1/chat/completions',
+    enabled: true,
+  };
+  return { provider: null, apiKey: '', model: '', endpoint: '', enabled: false };
+})();
+if (!AI.enabled) console.log('ℹ No AI API key set (ANTHROPIC_API_KEY or HF_TOKEN) — AI content disabled (deterministic fallback in use).');
+else             console.log(`ℹ AI content enabled via ${AI.provider} (${AI.model}).`);
 
 function aiCacheDir(season){ return join(DATA, String(season), 'ai-cache'); }
 
+// Generous JSON extractor — open models often produce extra prose before
+// or after the JSON. Try fenced code blocks first, then the first {...}
+// substring that parses.
+function extractJSON(text){
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence){
+    try { return JSON.parse(fence[1].trim()); } catch {}
+  }
+  // Find a brace-balanced JSON object anywhere in the response
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < text.length; i++){
+    const c = text[i];
+    if (esc){ esc = false; continue; }
+    if (c === '\\'){ esc = true; continue; }
+    if (c === '"' && !esc) inStr = !inStr;
+    if (inStr) continue;
+    if (c === '{') depth++;
+    else if (c === '}'){
+      depth--;
+      if (depth === 0){
+        try { return JSON.parse(text.slice(start, i + 1)); }
+        catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 async function callClaude(prompt, opts = {}){
   if (!AI.enabled) return null;
-  const cacheKey = createHash('sha256').update(AI.model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
+  const cacheKey = createHash('sha256').update(AI.provider + '\n' + AI.model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
   const cacheFile = join(aiCacheDir(opts.season || 'global'), cacheKey + '.json');
   if (existsSync(cacheFile)){
     try { return JSON.parse(readFileSync(cacheFile, 'utf8')); } catch {}
   }
   mkdirSync(aiCacheDir(opts.season || 'global'), { recursive: true });
 
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+  // For JSON-mode prompts, stress the constraint at the end — open models
+  // need the reminder more than Claude does.
+  const userContent = opts.parseJSON
+    ? prompt + '\n\nIMPORTANT: Respond with ONLY the JSON object. No prose before or after.'
+    : prompt;
+
+  let fetchOpts;
+  if (AI.provider === 'anthropic'){
+    fetchOpts = {
       method: 'POST',
       headers: {
         'x-api-key': AI.apiKey,
@@ -536,21 +598,45 @@ async function callClaude(prompt, opts = {}){
         model: AI.model,
         max_tokens: opts.maxTokens || 1500,
         system: opts.system || '',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: userContent }],
       }),
-    });
+    };
+  } else {
+    // HuggingFace router uses OpenAI-compatible chat completion schema
+    const messages = [];
+    if (opts.system) messages.push({ role: 'system', content: opts.system });
+    messages.push({ role: 'user', content: userContent });
+    fetchOpts = {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${AI.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: AI.model,
+        messages,
+        max_tokens: opts.maxTokens || 1500,
+        temperature: 0.7,
+      }),
+    };
+  }
+
+  try {
+    const r = await fetch(AI.endpoint, fetchOpts);
     if (!r.ok){
-      console.warn(`AI call failed: ${r.status} ${await r.text()}`);
+      const err = await r.text();
+      console.warn(`AI call failed (${AI.provider}): ${r.status} ${err.slice(0, 200)}`);
       return null;
     }
     const j = await r.json();
-    const text = j.content?.[0]?.text || '';
+    const text = AI.provider === 'anthropic'
+      ? (j.content?.[0]?.text || '')
+      : (j.choices?.[0]?.message?.content || '');
+    if (!text) return null;
     let result;
     if (opts.parseJSON){
-      // Claude often wraps JSON in code fences; strip and parse.
-      const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-      try { result = JSON.parse(cleaned); }
-      catch (e){ console.warn(`AI JSON parse failed: ${e.message}`); return null; }
+      result = extractJSON(text);
+      if (!result){ console.warn(`AI JSON parse failed (first 160 chars): ${text.slice(0,160)}`); return null; }
     } else {
       result = { text };
     }
