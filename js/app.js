@@ -1009,7 +1009,9 @@ VIEWS.preview = async function(){
     </div>`;
   })() : '';
 
-  const cards = prev.games.filter(g => g.id !== gotw?.id).map(g => {
+  // Schedule games don't carry an `id` — identify GotW by team pair.
+  const isGotW = g => gotw && g.away === gotw.away && g.home === gotw.home;
+  const cards = prev.games.filter(g => !isGotW(g)).map(g => {
     if (!g.headline) return ''; // skip games without AI content
     const A = T(g.away), H = T(g.home), pred = g.prediction;
     return `<div class="card reveal preview-card">
