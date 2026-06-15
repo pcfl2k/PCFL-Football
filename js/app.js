@@ -555,7 +555,7 @@ function schedRow(g){
   const awWin = g.final && g.awayScore > g.homeScore, hmWin = g.final && g.homeScore > g.awayScore;
   return `<div class="sched-row">
     <a class="t right ${awWin?'winner':''}" href="#/teams/${g.away}"><span>${esc(aw.name)}</span>${g.final?`<span class="sc">${g.awayScore}</span>`:''}<img src="${logo(g.away)}" alt=""></a>
-    <div class="mid">${g.final?'<b>Final</b>':'<b>@</b>'}</div>
+    <div class="mid">${g.final?`<b>Final${g.notes?' '+esc(g.notes.toUpperCase()):''}</b>`:'<b>@</b>'}</div>
     <a class="t ${hmWin?'winner':''}" href="#/teams/${g.home}"><img src="${logo(g.home)}" alt="">${g.final?`<span class="sc">${g.homeScore}</span>`:''}<span>${esc(hm.name)}</span></a>
   </div>`;
 }
@@ -704,7 +704,7 @@ VIEWS.team = async function(slug){
           return `<a class="minirow" href="${g.final?`#/game/${App.season}/${g.week}/${g.away}-${g.home}`:`#/teams/${opp}`}">
             <span style="width:42px;color:var(--muted);font-size:11px;font-weight:700">WK ${g.week}</span>
             <img src="${logo(opp)}" alt=""><b>${home?'vs':'at'} ${esc(T(opp).name)}</b>
-            <span style="margin-left:auto;font-family:var(--font-head)">${g.final?`<span class="chip ${won?'w':'l'}">${won?'W':'L'}</span> ${my}–${their}`:`<span style="color:var(--muted-2);font-size:11px">${esc(g.date||'')}</span>`}</span></a>`;
+            <span style="margin-left:auto;font-family:var(--font-head)">${g.final?`<span class="chip ${won?'w':'l'}">${won?'W':'L'}</span> ${my}–${their}${g.notes?` <span style="color:var(--muted-2);font-size:10px">${esc(g.notes.toUpperCase())}</span>`:''}`:`<span style="color:var(--muted-2);font-size:11px">${esc(g.date||'')}</span>`}</span></a>`;
         }).join('')}</div>
       </div>
       <aside>

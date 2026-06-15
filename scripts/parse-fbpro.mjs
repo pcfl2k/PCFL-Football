@@ -268,12 +268,18 @@ function weekHeader(weeks, s){
 }
 function parseSchedGame(s){
   if (!s) return null;
-  let m = s.match(/^(.+?)\s+(\d+)\s+at\s+(.+?)\s+(\d+)\s*$/);
+  // Played games: "Team A 35 at Team B 29" — with optional trailing annotation
+  // FBPro98 appends "(ot)", "(2ot)" etc. for overtime games. Capture the
+  // annotation as `notes` so it can be surfaced downstream.
+  let m = s.match(/^(.+?)\s+(\d+)\s+at\s+(.+?)\s+(\d+)(?:\s*\(([^)]+)\))?\s*$/);
   if (m){
     const a=teamFrom(m[1]), h=teamFrom(m[3]);
     if (!a||!h) return null;
-    return { away:a, home:h, awayScore:+m[2], homeScore:+m[4], final:true };
+    const out = { away:a, home:h, awayScore:+m[2], homeScore:+m[4], final:true };
+    if (m[5]) out.notes = m[5].trim();
+    return out;
   }
+  // Upcoming games: just "Team A at Team B"
   m = s.match(/^(.+?)\s+at\s+(.+?)\s*$/);
   if (m){
     const a=teamFrom(m[1]), h=teamFrom(m[2]);
