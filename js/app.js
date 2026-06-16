@@ -1446,8 +1446,10 @@ VIEWS.compare = async function(_, __, ___, q){
     }
   }
 
-  // Always-visible overall summary at bottom (when rosters available)
-  const overallHTML = (rosters[aSlug] && rosters[bSlug]) ? `
+  // ROSTER-strength overall card — only on Offense/Defense tabs. Season Stats
+  // gets its own season-record-based winner below so roster data never leaks
+  // into the "who won this matchup" call on the stats tab.
+  const rosterOverallHTML = (tab !== 'season' && rosters[aSlug] && rosters[bSlug]) ? `
     <div class="card reveal rcmp-overall">
       <div class="rcmp-othead">Overall Roster Strength</div>
       <div class="rcmp-otgrid">
@@ -1463,8 +1465,70 @@ VIEWS.compare = async function(_, __, ___, q){
           <div class="rcmp-otsub">Offense ${sideB.total} · Defense ${defB.total}</div>
         </div>
       </div>
-      <div class="rcmp-otnote">Scoring: avg OVR of active starters + depth bonus (15% of backup avg, +1.5 per backup ≥80) − penalties for missing players (−2 per missing starter, −1 if no depth).</div>
+      <div class="rcmp-otnote">Scoring: starter avg OVR + depth bonus (sum of backup OVRs × 0.04, +2.5 per backup ≥80) − penalties for missing players (−2 per missing starter, −1 if no depth).</div>
     </div>` : '';
+
+  // SEASON-STATS overall winner — only on Season Stats tab. Pure record-based
+  // call: head-to-head trumps, then wins, then point differential, then PPG.
+  // No roster data involved.
+  const seasonOverallHTML = (tab === 'season') ? (() => {
+    const playedH2H = h2h.find(g => g.final);
+    let winner = null, reason = '', detail = '';
+    if (playedH2H){
+      const aIsAway = playedH2H.away === aSlug;
+      const sa = aIsAway ? playedH2H.awayScore : playedH2H.homeScore;
+      const sb = aIsAway ? playedH2H.homeScore : playedH2H.awayScore;
+      if (sa !== sb){
+        winner = sa > sb ? aSlug : bSlug;
+        reason = 'Head-to-head';
+        detail = `Week ${playedH2H.week}: ${sa}–${sb}${playedH2H.notes?' '+playedH2H.notes.toUpperCase():''}`;
+      }
+    }
+    if (!winner){
+      const wA = sA?.w ?? 0, wB = sB?.w ?? 0;
+      if (wA !== wB){
+        winner = wA > wB ? aSlug : bSlug;
+        reason = 'Better record';
+        detail = `${wA}-${sA?.l ?? 0} vs ${wB}-${sB?.l ?? 0}`;
+      } else {
+        const diffA = (sA?.pf ?? 0) - (sA?.pa ?? 0);
+        const diffB = (sB?.pf ?? 0) - (sB?.pa ?? 0);
+        if (diffA !== diffB){
+          winner = diffA > diffB ? aSlug : bSlug;
+          reason = 'Point differential';
+          detail = `${diffA>0?'+':''}${diffA} vs ${diffB>0?'+':''}${diffB}`;
+        } else {
+          const ppgA = +(tsLookup('scoring', aSlug).ptsGame || 0);
+          const ppgB = +(tsLookup('scoring', bSlug).ptsGame || 0);
+          if (ppgA !== ppgB){
+            winner = ppgA > ppgB ? aSlug : bSlug;
+            reason = 'Points per game';
+            detail = `${ppgA} vs ${ppgB}`;
+          }
+        }
+      }
+    }
+    const aWinSeason = winner === aSlug, bWinSeason = winner === bSlug;
+    return `<div class="card reveal rcmp-overall season-overall">
+      <div class="rcmp-othead">Season Matchup Verdict</div>
+      <div class="rcmp-otgrid">
+        <div class="rcmp-otside ${aWinSeason?'win':''}">
+          <div class="rcmp-otname">${esc(A.name)}</div>
+          <div class="rcmp-ottot" style="font-size:32px">${sA?.w ?? 0}-${sA?.l ?? 0}</div>
+          <div class="rcmp-otsub">${(sA?.pf ?? 0) - (sA?.pa ?? 0) >= 0 ? '+' : ''}${(sA?.pf ?? 0) - (sA?.pa ?? 0)} pt diff</div>
+        </div>
+        <div class="rcmp-otvs">${winner ? `<span class="rcmp-check">✓ ${esc(T(winner).abbr)}</span>` : '<span>EVEN</span>'}</div>
+        <div class="rcmp-otside right ${bWinSeason?'win':''}">
+          <div class="rcmp-otname">${esc(B.name)}</div>
+          <div class="rcmp-ottot" style="font-size:32px">${sB?.w ?? 0}-${sB?.l ?? 0}</div>
+          <div class="rcmp-otsub">${(sB?.pf ?? 0) - (sB?.pa ?? 0) >= 0 ? '+' : ''}${(sB?.pf ?? 0) - (sB?.pa ?? 0)} pt diff</div>
+        </div>
+      </div>
+      ${winner ? `<div class="rcmp-otnote"><b>${esc(reason)}:</b> ${esc(detail)}</div>` : `<div class="rcmp-otnote">Teams are even on record, point diff, and PPG.</div>`}
+    </div>`;
+  })() : '';
+
+  const overallHTML = rosterOverallHTML + seasonOverallHTML;
 
   return `
     <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Team Comparison</h2><span class="sub">Head-to-head breakdown</span></div>
