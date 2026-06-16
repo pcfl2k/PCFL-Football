@@ -1132,24 +1132,56 @@ VIEWS.playoffs = async function(){
 /* ----------------------------- compare --------------------------- */
 
 /* ------ Roster unit scoring helpers (used by VIEWS.compare) ------ */
-// Unit groups: each named unit consists of one or more positions, each with
-// expected starter and depth counts (PCFL convention). Used to score teams
-// on overall roster strength side-by-side.
+// Default total roster slots considered per position (configurable per-user
+// via URL params). "QB: 2" means we compare the top 2 QBs (1 starter + 1 depth).
+const DEFAULT_DEPTHS = {
+  QB: 2, HB: 4, FB: 2, WR: 5, TE: 2, C: 2, G: 3, T: 3, K: 1,
+  DE: 4, DT: 2, LB: 5, CB: 5, S: 3, P: 1,
+};
+// Starter counts are fixed by football convention.
+const STARTER_COUNTS = {
+  QB: 1, HB: 1, FB: 1, WR: 3, TE: 1, C: 1, G: 2, T: 2, K: 1,
+  DE: 2, DT: 2, LB: 3, CB: 2, S: 2, P: 1,
+};
+const POS_LABELS = {
+  QB:'Quarterback', HB:'Halfback', FB:'Fullback', WR:'Wide Receiver', TE:'Tight End',
+  C:'Center', G:'Guard', T:'Tackle', K:'Kicker',
+  DE:'Defensive End', DT:'Defensive Tackle', LB:'Linebacker',
+  CB:'Cornerback', S:'Safety', P:'Punter',
+};
+
 const UNIT_GROUPS = {
   offense: [
-    { name: 'Quarterback',     positions: { QB: { starters: 1, depth: 1 } } },
-    { name: 'Running Backs',   positions: { HB: { starters: 1, depth: 2 }, FB: { starters: 1, depth: 1 } } },
-    { name: 'Receivers',       positions: { WR: { starters: 3, depth: 2 }, TE: { starters: 1, depth: 1 } } },
-    { name: 'Offensive Line',  positions: { C:  { starters: 1, depth: 1 }, G:  { starters: 2, depth: 1 }, T:  { starters: 2, depth: 1 } } },
+    { name: 'Quarterback',     positions: ['QB'] },
+    { name: 'Running Backs',   positions: ['HB', 'FB'] },
+    { name: 'Receivers',       positions: ['WR', 'TE'] },
+    { name: 'Offensive Line',  positions: ['C', 'G', 'T'] },
+    { name: 'Kicker',          positions: ['K'] },
   ],
   defense: [
-    { name: 'Defensive Line',  positions: { DE: { starters: 2, depth: 1 }, DT: { starters: 2, depth: 1 } } },
-    { name: 'Linebackers',     positions: { LB: { starters: 3, depth: 2 } } },
-    { name: 'Defensive Backs', positions: { CB: { starters: 2, depth: 1 }, S:  { starters: 2, depth: 1 } } },
+    { name: 'Defensive Line',  positions: ['DE', 'DT'] },
+    { name: 'Linebackers',     positions: ['LB'] },
+    { name: 'Defensive Backs', positions: ['CB', 'S'] },
+    { name: 'Punter',          positions: ['P'] },
   ],
 };
 
-function scorePosition(roster, pos, startersCount, expectedDepth){
+const ATTRS_KEYS = [['SP','Speed'],['AC','Acceleration'],['AG','Agility'],['ST','Strength'],['HA','Hands'],['EN','Endurance'],['IN','Intelligence'],['DI','Discipline']];
+const ratingClass = v => v>=90?'r4':v>=80?'r3':v>=70?'r2':'r1';
+
+function getCompareConfig(q){
+  const cfg = { depths: { ...DEFAULT_DEPTHS }, penalty: true };
+  for (const pos of Object.keys(DEFAULT_DEPTHS)){
+    const v = q.get(pos.toLowerCase());
+    if (v != null && +v >= 1) cfg.depths[pos] = Math.min(8, Math.max(1, +v));
+  }
+  if (q.get('pen') === '0') cfg.penalty = false;
+  return cfg;
+}
+
+function scorePosition(roster, pos, totalDepth, cfg){
+  const startersCount = STARTER_COUNTS[pos] || 1;
+  const expectedDepth = Math.max(0, totalDepth - startersCount);
   // Active (A) and operational/depth (O) players only — skip I, IR
   const players = roster
     .filter(p => p.pos === pos && (p.status === 'A' || p.status === 'O'))
@@ -1162,16 +1194,18 @@ function scorePosition(roster, pos, startersCount, expectedDepth){
 
   let penalty = 0;
   const reasons = [];
-  if (starters.length === 0){
-    penalty = -2;
-    reasons.push(`No ${pos} on roster (−2)`);
-  } else if (starters.length < startersCount){
-    const missing = startersCount - starters.length;
-    penalty = -2 * missing;
-    reasons.push(`${missing} ${pos} starter slot${missing>1?'s':''} unfilled (${penalty})`);
-  } else if (backups.length === 0 && expectedDepth > 0){
-    penalty = -1;
-    reasons.push(`No ${pos} depth (−1)`);
+  if (cfg.penalty){
+    if (starters.length === 0){
+      penalty = -2;
+      reasons.push(`No ${pos} on roster (−2)`);
+    } else if (starters.length < startersCount){
+      const missing = startersCount - starters.length;
+      penalty = -2 * missing;
+      reasons.push(`${missing} ${pos} starter slot${missing>1?'s':''} unfilled (${penalty})`);
+    } else if (backups.length === 0 && expectedDepth > 0){
+      penalty = -1;
+      reasons.push(`No ${pos} depth (−1)`);
+    }
   }
 
   const avg = arr => arr.length ? arr.reduce((s,p)=>s+p.ovr,0)/arr.length : 0;
@@ -1195,20 +1229,20 @@ function scorePosition(roster, pos, startersCount, expectedDepth){
   };
 }
 
-function scoreUnit(roster, unit){
+function scoreUnit(roster, unit, cfg){
   const subs = [];
   let total = 0;
-  for (const [pos, cfg] of Object.entries(unit.positions)){
-    const s = scorePosition(roster, pos, cfg.starters, cfg.depth);
+  for (const pos of unit.positions){
+    const s = scorePosition(roster, pos, cfg.depths[pos], cfg);
     subs.push(s);
     total += s.score;
   }
   return { name: unit.name, subs, total: +total.toFixed(1) };
 }
 
-function scoreSide(roster, side){
+function scoreSide(roster, side, cfg){
   if (!roster) return { units: [], total: 0 };
-  const units = UNIT_GROUPS[side].map(u => scoreUnit(roster, u));
+  const units = UNIT_GROUPS[side].map(u => scoreUnit(roster, u, cfg));
   const total = units.reduce((s, u) => s + u.total, 0);
   return { units, total: +total.toFixed(1) };
 }
@@ -1252,40 +1286,68 @@ VIEWS.compare = async function(_, __, ___, q){
     }
   }
 
+  // User-configurable per-position depths + penalty toggle from URL
+  const cfg = getCompareConfig(q);
+
   // Compute roster-unit scores once per side per tab
-  const sideA = scoreSide(rosters[aSlug], 'offense');
-  const sideB = scoreSide(rosters[bSlug], 'offense');
-  const defA  = scoreSide(rosters[aSlug], 'defense');
-  const defB  = scoreSide(rosters[bSlug], 'defense');
+  const sideA = scoreSide(rosters[aSlug], 'offense', cfg);
+  const sideB = scoreSide(rosters[bSlug], 'offense', cfg);
+  const defA  = scoreSide(rosters[aSlug], 'defense', cfg);
+  const defB  = scoreSide(rosters[bSlug], 'defense', cfg);
   const totalA = +(sideA.total + defA.total).toFixed(1);
   const totalB = +(sideB.total + defB.total).toFixed(1);
   const totalWinner = totalA === totalB ? null : (totalA > totalB ? aSlug : bSlug);
+
+  /* Render full roster table for one team's players at a position group */
+  const playerTable = (players, slug) => {
+    const tm = T(slug);
+    const head = `<tr><th>#</th><th>Player</th><th>Pos</th><th title="Overall — average of the 8 actual ratings">OVR</th>
+      ${ATTRS_KEYS.map(([k,n])=>`<th class="attr-h" title="${n}">${k}</th>`).join('')}</tr>`;
+    if (!players.length){
+      return `<div class="cmp-team-block">
+        <div class="cmp-team-head"><img src="${logo(slug)}" alt=""><b>${esc(tm.name)}</b></div>
+        <div class="cmp-empty">No player at this position</div>
+      </div>`;
+    }
+    const rows = players.map(p => `<tr>
+      <td>${p.num}</td>
+      <td style="font-weight:600;white-space:nowrap">${esc(p.name)}</td>
+      <td>${esc(p.pos)}${p.depth?`<span style="color:var(--muted-2)">${p.depth}</span>`:''}</td>
+      <td><span class="ovr ${p.ovr>=85?'elite':p.ovr>=78?'good':'avg'}">${p.ovr}</span></td>
+      ${(p.a||[]).map((v,i)=>`<td class="attr"><b class="${ratingClass(v)}">${v}</b><span>${(p.p||[])[i] ?? ''}</span></td>`).join('')}
+    </tr>`).join('');
+    return `<div class="cmp-team-block">
+      <div class="cmp-team-head"><img src="${logo(slug)}" alt=""><b>${esc(tm.name)}</b></div>
+      <div class="cmp-team-table-wrap">
+        <table class="roster-table cmp-roster"><thead>${head}</thead><tbody>${rows}</tbody></table>
+      </div>
+    </div>`;
+  };
 
   /* Render one position row inside a unit (e.g. "QB" or "HB") */
   const positionRow = (posA, posB) => {
     const aWin = posA.score > posB.score;
     const bWin = posB.score > posA.score;
-    const playerList = arr => arr.length
-      ? arr.map(p => `<div class="rcmp-player">
-          <span class="rcmp-tag">${p.status}${p.depth?p.depth:''}</span>
-          <span class="rcmp-pname">${esc(p.name)}</span>
-          <span class="rcmp-ovr ${p.ovr>=85?'r4':p.ovr>=78?'r3':p.ovr>=70?'r2':'r1'}">${p.ovr}</span>
-        </div>`).join('')
-      : '<div class="rcmp-empty">none on roster</div>';
+    const winnerLabel = aWin ? `<span class="rcmp-pwin">${esc(A.abbr)} wins</span>`
+                     : bWin ? `<span class="rcmp-pwin">${esc(B.abbr)} wins</span>`
+                     : `<span class="rcmp-ptie">even</span>`;
     return `<div class="rcmp-prow">
-      <div class="rcmp-pside ${aWin?'win':''}">
-        <div class="rcmp-phead"><b>${posA.pos}</b><span class="rcmp-pscore">${posA.score}</span></div>
-        ${playerList(posA.players)}
-        ${posA.reasons.length ? `<div class="rcmp-pwhy">${posA.reasons.map(esc).join(' · ')}</div>` : ''}
+      <div class="rcmp-phead-row">
+        <div class="rcmp-pscoreA ${aWin?'win':''}">${posA.score}</div>
+        <div class="rcmp-pname-row">
+          <span class="rcmp-poslabel">${esc(POS_LABELS[posA.pos] || posA.pos)} <code>${posA.pos}</code></span>
+          ${aWin ? `<span class="rcmp-check left">✓</span>` : bWin ? `<span class="rcmp-check right">✓</span>` : ''}
+          <span class="rcmp-depth">(top ${cfg.depths[posA.pos]} compared)</span>
+        </div>
+        <div class="rcmp-pscoreB ${bWin?'win':''}">${posB.score}</div>
       </div>
-      <div class="rcmp-pmid">
-        ${aWin ? '<span class="rcmp-check left">✓</span>' : bWin ? '<span class="rcmp-check right">✓</span>' : '<span class="rcmp-tie">—</span>'}
-      </div>
-      <div class="rcmp-pside right ${bWin?'win':''}">
-        <div class="rcmp-phead"><span class="rcmp-pscore">${posB.score}</span><b>${posB.pos}</b></div>
-        ${playerList(posB.players)}
-        ${posB.reasons.length ? `<div class="rcmp-pwhy">${posB.reasons.map(esc).join(' · ')}</div>` : ''}
-      </div>
+      ${playerTable(posA.players, aSlug)}
+      ${playerTable(posB.players, bSlug)}
+      ${(posA.reasons.length || posB.reasons.length) ? `<div class="rcmp-reasons">
+        <div class="rcmp-rcol"><div class="rcmp-rlbl">${esc(A.abbr)} bonus / penalty</div>${posA.reasons.length?posA.reasons.map(r=>`<div>· ${esc(r)}</div>`).join(''):'<div class="rcmp-empty-r">—</div>'}</div>
+        <div class="rcmp-rcol"><div class="rcmp-rlbl">${esc(B.abbr)} bonus / penalty</div>${posB.reasons.length?posB.reasons.map(r=>`<div>· ${esc(r)}</div>`).join(''):'<div class="rcmp-empty-r">—</div>'}</div>
+      </div>` : ''}
+      <div class="rcmp-winner-strip">${winnerLabel}</div>
     </div>`;
   };
 
@@ -1432,7 +1494,94 @@ VIEWS.compare = async function(_, __, ___, q){
     ${tabsHTML}
     ${body}
     ${overallHTML}
+    ${cfgPanelHTML(cfg)}
   `;
+};
+
+/* Configuration flyout panel — rendered once inside VIEWS.compare */
+function cfgPanelHTML(cfg){
+  const stepper = (pos) => `<div class="cfg-row">
+    <span class="cfg-row-lbl">${POS_LABELS[pos]} <code>${pos}</code></span>
+    <div class="cfg-stepper">
+      <button type="button" onclick="window.stepCfg('${pos.toLowerCase()}',-1)">−</button>
+      <span class="cfg-val">${cfg.depths[pos]}</span>
+      <button type="button" onclick="window.stepCfg('${pos.toLowerCase()}',1)">+</button>
+    </div>
+  </div>`;
+  const offPositions = ['QB','HB','FB','WR','TE','C','G','T','K'];
+  const defPositions = ['DE','DT','LB','CB','S','P'];
+  return `
+    <button class="cfg-toggle" type="button" onclick="window.cfgOpen()">⚙ Configure</button>
+    <div class="cfg-overlay" onclick="window.cfgClose()"></div>
+    <aside class="cfg-panel" aria-hidden="true">
+      <div class="cfg-head">
+        <h3>Comparison Settings</h3>
+        <button type="button" class="cfg-close" onclick="window.cfgClose()" aria-label="Close">✕</button>
+      </div>
+      <div class="cfg-body">
+        <div class="cfg-section">
+          <div class="cfg-section-head">Offense — depth per position</div>
+          ${offPositions.map(stepper).join('')}
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-section-head">Defense — depth per position</div>
+          ${defPositions.map(stepper).join('')}
+        </div>
+        <div class="cfg-section">
+          <div class="cfg-section-head">Penalties</div>
+          <label class="cfg-toggle-row">
+            <input type="checkbox" ${cfg.penalty?'checked':''} onchange="window.updateCfg('pen', this.checked ? null : 0)">
+            <span>Penalize missing players</span>
+          </label>
+          <div class="cfg-note">−2 per missing starter, −1 if no depth at the position</div>
+        </div>
+        <div class="cfg-actions">
+          <button type="button" class="cfg-reset" onclick="window.resetCfg()">Reset to Defaults</button>
+        </div>
+      </div>
+    </aside>`;
+}
+
+// URL-based config helpers (state lives in the hash query string)
+window.cfgOpen = () => {
+  document.querySelector('.cfg-panel')?.classList.add('open');
+  document.querySelector('.cfg-overlay')?.classList.add('open');
+};
+window.cfgClose = () => {
+  document.querySelector('.cfg-panel')?.classList.remove('open');
+  document.querySelector('.cfg-overlay')?.classList.remove('open');
+};
+function _hashParams(){
+  const [path, search] = (location.hash || '#/').slice(2).split('?');
+  return { path, params: new URLSearchParams(search || '') };
+}
+function _writeParams(path, params){
+  const qs = params.toString();
+  // Preserve panel-open state across re-renders by re-opening after route
+  const wasOpen = document.querySelector('.cfg-panel')?.classList.contains('open');
+  location.hash = '#/' + path + (qs ? '?' + qs : '');
+  if (wasOpen) setTimeout(() => window.cfgOpen(), 30);
+}
+window.stepCfg = (pos, delta) => {
+  const { path, params } = _hashParams();
+  const defKey = pos.toUpperCase();
+  const def = DEFAULT_DEPTHS[defKey] || 1;
+  const cur = +(params.get(pos) || def);
+  const next = Math.max(1, Math.min(8, cur + delta));
+  if (next === def) params.delete(pos); else params.set(pos, next);
+  _writeParams(path, params);
+};
+window.updateCfg = (key, value) => {
+  const { path, params } = _hashParams();
+  if (value === null || value === '' || value === undefined) params.delete(key);
+  else params.set(key, value);
+  _writeParams(path, params);
+};
+window.resetCfg = () => {
+  const { path, params } = _hashParams();
+  const keep = ['a','b','tab'];
+  for (const k of [...params.keys()]) if (!keep.includes(k)) params.delete(k);
+  _writeParams(path, params);
 };
 
 /* ----------------------------- podcast --------------------------- */
