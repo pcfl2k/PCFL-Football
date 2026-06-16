@@ -1130,11 +1130,96 @@ VIEWS.playoffs = async function(){
 };
 
 /* ----------------------------- compare --------------------------- */
+
+/* ------ Roster unit scoring helpers (used by VIEWS.compare) ------ */
+// Unit groups: each named unit consists of one or more positions, each with
+// expected starter and depth counts (PCFL convention). Used to score teams
+// on overall roster strength side-by-side.
+const UNIT_GROUPS = {
+  offense: [
+    { name: 'Quarterback',     positions: { QB: { starters: 1, depth: 1 } } },
+    { name: 'Running Backs',   positions: { HB: { starters: 1, depth: 2 }, FB: { starters: 1, depth: 1 } } },
+    { name: 'Receivers',       positions: { WR: { starters: 3, depth: 2 }, TE: { starters: 1, depth: 1 } } },
+    { name: 'Offensive Line',  positions: { C:  { starters: 1, depth: 1 }, G:  { starters: 2, depth: 1 }, T:  { starters: 2, depth: 1 } } },
+  ],
+  defense: [
+    { name: 'Defensive Line',  positions: { DE: { starters: 2, depth: 1 }, DT: { starters: 2, depth: 1 } } },
+    { name: 'Linebackers',     positions: { LB: { starters: 3, depth: 2 } } },
+    { name: 'Defensive Backs', positions: { CB: { starters: 2, depth: 1 }, S:  { starters: 2, depth: 1 } } },
+  ],
+};
+
+function scorePosition(roster, pos, startersCount, expectedDepth){
+  // Active (A) and operational/depth (O) players only — skip I, IR
+  const players = roster
+    .filter(p => p.pos === pos && (p.status === 'A' || p.status === 'O'))
+    .sort((x, y) => {
+      if (x.status !== y.status) return x.status === 'A' ? -1 : 1;
+      return (x.depth || 99) - (y.depth || 99);
+    });
+  const starters = players.slice(0, startersCount);
+  const backups  = players.slice(startersCount, startersCount + expectedDepth);
+
+  let penalty = 0;
+  const reasons = [];
+  if (starters.length === 0){
+    penalty = -2;
+    reasons.push(`No ${pos} on roster (−2)`);
+  } else if (starters.length < startersCount){
+    const missing = startersCount - starters.length;
+    penalty = -2 * missing;
+    reasons.push(`${missing} ${pos} starter slot${missing>1?'s':''} unfilled (${penalty})`);
+  } else if (backups.length === 0 && expectedDepth > 0){
+    penalty = -1;
+    reasons.push(`No ${pos} depth (−1)`);
+  }
+
+  const avg = arr => arr.length ? arr.reduce((s,p)=>s+p.ovr,0)/arr.length : 0;
+  const starterAvg = avg(starters);
+  const backupAvg  = avg(backups);
+  const talentedDepth = backups.filter(p => p.ovr >= 80).length;
+  const depthBonus = (backupAvg * 0.15) + (talentedDepth * 1.5);
+  const score = starterAvg + depthBonus + penalty;
+
+  if (talentedDepth > 0) reasons.push(`${talentedDepth} talented backup${talentedDepth>1?'s':''} (≥80 OVR) +${(talentedDepth*1.5).toFixed(1)}`);
+  if (backupAvg > 0)      reasons.push(`depth avg ${backupAvg.toFixed(1)} → +${(backupAvg*0.15).toFixed(1)}`);
+
+  return {
+    pos, players: [...starters, ...backups], starters, backups,
+    starterAvg: +starterAvg.toFixed(1),
+    backupAvg:  +backupAvg.toFixed(1),
+    depthBonus: +depthBonus.toFixed(1),
+    penalty, talentedDepth,
+    score: +score.toFixed(1),
+    reasons,
+  };
+}
+
+function scoreUnit(roster, unit){
+  const subs = [];
+  let total = 0;
+  for (const [pos, cfg] of Object.entries(unit.positions)){
+    const s = scorePosition(roster, pos, cfg.starters, cfg.depth);
+    subs.push(s);
+    total += s.score;
+  }
+  return { name: unit.name, subs, total: +total.toFixed(1) };
+}
+
+function scoreSide(roster, side){
+  if (!roster) return { units: [], total: 0 };
+  const units = UNIT_GROUPS[side].map(u => scoreUnit(roster, u));
+  const total = units.reduce((s, u) => s + u.total, 0);
+  return { units, total: +total.toFixed(1) };
+}
+
 VIEWS.compare = async function(_, __, ___, q){
   const wk = await weekData();
   const sos = await getJSON(`data/${App.season}/sos.json`).catch(() => ({}));
+  const rosters = await getJSON(`data/${App.season}/rosters.json`).catch(() => ({}));
   const aSlug = q.get('a') || 'texas';
   const bSlug = q.get('b') || 'notre-dame';
+  const tab = q.get('tab') || 'season';
   const A = T(aSlug), B = T(bSlug);
 
   const standOf = slug => {
@@ -1145,7 +1230,6 @@ VIEWS.compare = async function(_, __, ___, q){
     return null;
   };
   const sA = standOf(aSlug), sB = standOf(bSlug);
-  const teamStats = side => wk.teamSeasonStats || {};
   const tsLookup = (cat, slug) => (wk.teamSeasonStats?.[cat] || []).find(r => r.team === slug) || {};
 
   const compareRow = (label, va, vb, fmt = v => v, dir = 'higher') => {
@@ -1168,11 +1252,152 @@ VIEWS.compare = async function(_, __, ___, q){
     }
   }
 
-  const teamOpts = App.teams.map(t => `<option value="${t.slug}">${esc(t.name)}</option>`).join('');
-  const passingA = tsLookup('passing', aSlug), passingB = tsLookup('passing', bSlug);
-  const rushingA = tsLookup('rushing', aSlug), rushingB = tsLookup('rushing', bSlug);
-  const scoringA = tsLookup('scoring', aSlug), scoringB = tsLookup('scoring', bSlug);
-  const totalYdsA = tsLookup('totalYards', aSlug), totalYdsB = tsLookup('totalYards', bSlug);
+  // Compute roster-unit scores once per side per tab
+  const sideA = scoreSide(rosters[aSlug], 'offense');
+  const sideB = scoreSide(rosters[bSlug], 'offense');
+  const defA  = scoreSide(rosters[aSlug], 'defense');
+  const defB  = scoreSide(rosters[bSlug], 'defense');
+  const totalA = +(sideA.total + defA.total).toFixed(1);
+  const totalB = +(sideB.total + defB.total).toFixed(1);
+  const totalWinner = totalA === totalB ? null : (totalA > totalB ? aSlug : bSlug);
+
+  /* Render one position row inside a unit (e.g. "QB" or "HB") */
+  const positionRow = (posA, posB) => {
+    const aWin = posA.score > posB.score;
+    const bWin = posB.score > posA.score;
+    const playerList = arr => arr.length
+      ? arr.map(p => `<div class="rcmp-player">
+          <span class="rcmp-tag">${p.status}${p.depth?p.depth:''}</span>
+          <span class="rcmp-pname">${esc(p.name)}</span>
+          <span class="rcmp-ovr ${p.ovr>=85?'r4':p.ovr>=78?'r3':p.ovr>=70?'r2':'r1'}">${p.ovr}</span>
+        </div>`).join('')
+      : '<div class="rcmp-empty">none on roster</div>';
+    return `<div class="rcmp-prow">
+      <div class="rcmp-pside ${aWin?'win':''}">
+        <div class="rcmp-phead"><b>${posA.pos}</b><span class="rcmp-pscore">${posA.score}</span></div>
+        ${playerList(posA.players)}
+        ${posA.reasons.length ? `<div class="rcmp-pwhy">${posA.reasons.map(esc).join(' · ')}</div>` : ''}
+      </div>
+      <div class="rcmp-pmid">
+        ${aWin ? '<span class="rcmp-check left">✓</span>' : bWin ? '<span class="rcmp-check right">✓</span>' : '<span class="rcmp-tie">—</span>'}
+      </div>
+      <div class="rcmp-pside right ${bWin?'win':''}">
+        <div class="rcmp-phead"><span class="rcmp-pscore">${posB.score}</span><b>${posB.pos}</b></div>
+        ${playerList(posB.players)}
+        ${posB.reasons.length ? `<div class="rcmp-pwhy">${posB.reasons.map(esc).join(' · ')}</div>` : ''}
+      </div>
+    </div>`;
+  };
+
+  /* Render a unit (one or more positions grouped) */
+  const unitBlock = (uA, uB) => {
+    const aWin = uA.total > uB.total;
+    const bWin = uB.total > uA.total;
+    const rows = uA.subs.map((sa, i) => positionRow(sa, uB.subs[i])).join('');
+    return `<div class="rcmp-unit">
+      <div class="rcmp-uhead">
+        <span class="rcmp-uscore ${aWin?'win':''}">${uA.total}</span>
+        <span class="rcmp-uname">${esc(uA.name)} ${aWin?'<span class="rcmp-check">✓</span>':bWin?'<span class="rcmp-check right">✓</span>':''}</span>
+        <span class="rcmp-uscore right ${bWin?'win':''}">${uB.total}</span>
+      </div>
+      ${rows}
+    </div>`;
+  };
+
+  const sideTab = (units, side) => {
+    const aTotal = units.A.total, bTotal = units.B.total;
+    const aWin = aTotal > bTotal;
+    return `
+      <div class="rcmp-toplabel">
+        <span>${esc(A.name)}</span><span>${esc(side[0].toUpperCase()+side.slice(1))} Comparison</span><span>${esc(B.name)}</span>
+      </div>
+      ${units.A.units.map((u, i) => unitBlock(u, units.B.units[i])).join('')}
+      <div class="rcmp-sidetotal">
+        <span class="rcmp-stscore ${aWin?'win':''}">${aTotal}</span>
+        <span class="rcmp-stname">${side[0].toUpperCase()+side.slice(1)} Total</span>
+        <span class="rcmp-stscore right ${!aWin && bTotal>aTotal?'win':''}">${bTotal}</span>
+      </div>`;
+  };
+
+  const tabsHTML = `<div class="pill-tabs" style="margin:18px 0 12px">
+    <button class="${tab==='season'?'on':''}" onclick="location.hash='#/compare?a=${aSlug}&b=${bSlug}&tab=season'">Season Stats</button>
+    <button class="${tab==='offense'?'on':''}" onclick="location.hash='#/compare?a=${aSlug}&b=${bSlug}&tab=offense'">Offense (Roster)</button>
+    <button class="${tab==='defense'?'on':''}" onclick="location.hash='#/compare?a=${aSlug}&b=${bSlug}&tab=defense'">Defense (Roster)</button>
+  </div>`;
+
+  let body = '';
+  if (tab === 'season'){
+    const passingA = tsLookup('passing', aSlug), passingB = tsLookup('passing', bSlug);
+    const rushingA = tsLookup('rushing', aSlug), rushingB = tsLookup('rushing', bSlug);
+    const scoringA = tsLookup('scoring', aSlug), scoringB = tsLookup('scoring', bSlug);
+    const totalYdsA = tsLookup('totalYards', aSlug), totalYdsB = tsLookup('totalYards', bSlug);
+    body = `
+      <div class="card reveal cmp-card">
+        <div class="cmp-section">Season record</div>
+        ${compareRow('Wins', sA?.w, sB?.w)}
+        ${compareRow('Losses', sA?.l, sB?.l, v=>v, 'lower')}
+        ${compareRow('Points for', sA?.pf, sB?.pf)}
+        ${compareRow('Points against', sA?.pa, sB?.pa, v=>v, 'lower')}
+        ${compareRow('Point diff', (sA?.pf-sA?.pa), (sB?.pf-sB?.pa), v => (v>0?'+':'') + v)}
+        ${compareRow('Streak', sA?.streak, sB?.streak, esc)}
+        ${compareRow('Strength of schedule', sos[aSlug], sos[bSlug], v => v ? (v*100).toFixed(1)+'%' : '—')}
+      </div>
+      <div class="card reveal cmp-card">
+        <div class="cmp-section">Offense</div>
+        ${compareRow('Pass yards', passingA.yds, passingB.yds)}
+        ${compareRow('Pass TDs', passingA.td, passingB.td)}
+        ${compareRow('Passer rating', passingA.rtg, passingB.rtg)}
+        ${compareRow('Rush yards', rushingA.yds, rushingB.yds)}
+        ${compareRow('Rush TDs', rushingA.td, rushingB.td)}
+        ${compareRow('Total yards/G', totalYdsA.ydsGame, totalYdsB.ydsGame)}
+        ${compareRow('Points/G', scoringA.ptsGame, scoringB.ptsGame)}
+      </div>
+      ${h2h.length ? `
+      <div class="card reveal cmp-card">
+        <div class="cmp-section">Head-to-head</div>
+        ${h2h.map(g => {
+          const aIsAway = g.away === aSlug;
+          const sa = g.final ? (aIsAway ? g.awayScore : g.homeScore) : null;
+          const sb = g.final ? (aIsAway ? g.homeScore : g.awayScore) : null;
+          return `<div class="h2h-row">
+            <span>Week ${g.week} · ${esc(g.date||'')}</span>
+            <span>${g.final ? `<b>${sa}</b>–<b>${sb}</b> at ${esc(T(aIsAway?g.home:g.away).abbr)}` : 'Scheduled'}</span>
+          </div>`;
+        }).join('')}
+      </div>` : ''}`;
+  } else if (tab === 'offense'){
+    if (!rosters[aSlug] || !rosters[bSlug]){
+      body = `<div class="empty card"><b>Roster comparison unavailable</b>Rosters must be uploaded for both teams.</div>`;
+    } else {
+      body = `<div class="card reveal">${sideTab({ A: sideA, B: sideB }, 'offense')}</div>`;
+    }
+  } else if (tab === 'defense'){
+    if (!rosters[aSlug] || !rosters[bSlug]){
+      body = `<div class="empty card"><b>Roster comparison unavailable</b>Rosters must be uploaded for both teams.</div>`;
+    } else {
+      body = `<div class="card reveal">${sideTab({ A: defA, B: defB }, 'defense')}</div>`;
+    }
+  }
+
+  // Always-visible overall summary at bottom (when rosters available)
+  const overallHTML = (rosters[aSlug] && rosters[bSlug]) ? `
+    <div class="card reveal rcmp-overall">
+      <div class="rcmp-othead">Overall Roster Strength</div>
+      <div class="rcmp-otgrid">
+        <div class="rcmp-otside ${totalA>totalB?'win':''}">
+          <div class="rcmp-otname">${esc(A.name)}</div>
+          <div class="rcmp-ottot">${totalA}</div>
+          <div class="rcmp-otsub">Offense ${sideA.total} · Defense ${defA.total}</div>
+        </div>
+        <div class="rcmp-otvs">${totalWinner ? `<span class="rcmp-check">✓ ${esc(T(totalWinner).abbr)}</span>` : '<span>EVEN</span>'}</div>
+        <div class="rcmp-otside right ${totalB>totalA?'win':''}">
+          <div class="rcmp-otname">${esc(B.name)}</div>
+          <div class="rcmp-ottot">${totalB}</div>
+          <div class="rcmp-otsub">Offense ${sideB.total} · Defense ${defB.total}</div>
+        </div>
+      </div>
+      <div class="rcmp-otnote">Scoring: avg OVR of active starters + depth bonus (15% of backup avg, +1.5 per backup ≥80) − penalties for missing players (−2 per missing starter, −1 if no depth).</div>
+    </div>` : '';
 
   return `
     <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Team Comparison</h2><span class="sub">Head-to-head breakdown</span></div>
@@ -1180,13 +1405,13 @@ VIEWS.compare = async function(_, __, ___, q){
     <div class="cmp-pickers">
       <div>
         <label>Team A</label>
-        <select onchange="location.hash='#/compare?a='+this.value+'&b=${bSlug}'">
+        <select onchange="location.hash='#/compare?a='+this.value+'&b=${bSlug}&tab=${tab}'">
           ${App.teams.map(t => `<option value="${t.slug}" ${t.slug===aSlug?'selected':''}>${esc(t.name)}</option>`).join('')}
         </select>
       </div>
       <div>
         <label>Team B</label>
-        <select onchange="location.hash='#/compare?a=${aSlug}&b='+this.value">
+        <select onchange="location.hash='#/compare?a=${aSlug}&b='+this.value+'&tab=${tab}'">
           ${App.teams.map(t => `<option value="${t.slug}" ${t.slug===bSlug?'selected':''}>${esc(t.name)}</option>`).join('')}
         </select>
       </div>
@@ -1204,41 +1429,9 @@ VIEWS.compare = async function(_, __, ___, q){
       </a>
     </div>
 
-    <div class="card reveal cmp-card">
-      <div class="cmp-section">Season record</div>
-      ${compareRow('Wins', sA?.w, sB?.w)}
-      ${compareRow('Losses', sA?.l, sB?.l, v=>v, 'lower')}
-      ${compareRow('Points for', sA?.pf, sB?.pf)}
-      ${compareRow('Points against', sA?.pa, sB?.pa, v=>v, 'lower')}
-      ${compareRow('Point diff', (sA?.pf-sA?.pa), (sB?.pf-sB?.pa), v => (v>0?'+':'') + v)}
-      ${compareRow('Streak', sA?.streak, sB?.streak, esc)}
-      ${compareRow('Strength of schedule', sos[aSlug], sos[bSlug], v => v ? (v*100).toFixed(1)+'%' : '—')}
-    </div>
-
-    <div class="card reveal cmp-card">
-      <div class="cmp-section">Offense</div>
-      ${compareRow('Pass yards', passingA.yds, passingB.yds)}
-      ${compareRow('Pass TDs', passingA.td, passingB.td)}
-      ${compareRow('Passer rating', passingA.rtg, passingB.rtg)}
-      ${compareRow('Rush yards', rushingA.yds, rushingB.yds)}
-      ${compareRow('Rush TDs', rushingA.td, rushingB.td)}
-      ${compareRow('Total yards/G', totalYdsA.ydsGame, totalYdsB.ydsGame)}
-      ${compareRow('Points/G', scoringA.ptsGame, scoringB.ptsGame)}
-    </div>
-
-    ${h2h.length ? `
-    <div class="card reveal cmp-card">
-      <div class="cmp-section">Head-to-head</div>
-      ${h2h.map(g => {
-        const aIsAway = g.away === aSlug;
-        const sa = g.final ? (aIsAway ? g.awayScore : g.homeScore) : null;
-        const sb = g.final ? (aIsAway ? g.homeScore : g.awayScore) : null;
-        return `<div class="h2h-row">
-          <span>Week ${g.week} · ${esc(g.date||'')}</span>
-          <span>${g.final ? `<b>${sa}</b>–<b>${sb}</b> at ${esc(T(aIsAway?g.home:g.away).abbr)}` : 'Scheduled'}</span>
-        </div>`;
-      }).join('')}
-    </div>` : ''}
+    ${tabsHTML}
+    ${body}
+    ${overallHTML}
   `;
 };
 
