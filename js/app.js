@@ -1209,14 +1209,21 @@ function scorePosition(roster, pos, totalDepth, cfg){
   }
 
   const avg = arr => arr.length ? arr.reduce((s,p)=>s+p.ovr,0)/arr.length : 0;
+  const sumOvr = arr => arr.reduce((s,p)=>s+p.ovr,0);
   const starterAvg = avg(starters);
   const backupAvg  = avg(backups);
+  const backupSum  = sumOvr(backups);
   const talentedDepth = backups.filter(p => p.ovr >= 80).length;
-  const depthBonus = (backupAvg * 0.15) + (talentedDepth * 1.5);
+  // Depth bonus uses SUM (not average) of backup OVRs — every extra backup
+  // adds score, so a team with more depth can only lose to a team with less
+  // depth if the lighter team has a materially better starter.
+  const depthSumBonus = backupSum * 0.04;
+  const talentedBonus = talentedDepth * 2.5;
+  const depthBonus = depthSumBonus + talentedBonus;
   const score = starterAvg + depthBonus + penalty;
 
-  if (talentedDepth > 0) reasons.push(`${talentedDepth} talented backup${talentedDepth>1?'s':''} (≥80 OVR) +${(talentedDepth*1.5).toFixed(1)}`);
-  if (backupAvg > 0)      reasons.push(`depth avg ${backupAvg.toFixed(1)} → +${(backupAvg*0.15).toFixed(1)}`);
+  if (backups.length > 0) reasons.push(`${backups.length} backup${backups.length>1?'s':''} (avg ${backupAvg.toFixed(1)}) → +${depthSumBonus.toFixed(1)}`);
+  if (talentedDepth > 0)  reasons.push(`${talentedDepth} talented backup${talentedDepth>1?'s':''} (≥80 OVR) +${talentedBonus.toFixed(1)}`);
 
   return {
     pos, players: [...starters, ...backups], starters, backups,
@@ -1324,22 +1331,19 @@ VIEWS.compare = async function(_, __, ___, q){
     </div>`;
   };
 
-  /* Render one position row inside a unit (e.g. "QB" or "HB") */
+  /* Render one position row inside a unit (e.g. "QB" or "HB").
+     Single ✓ per row — placed only next to the winning side's score. */
   const positionRow = (posA, posB) => {
     const aWin = posA.score > posB.score;
     const bWin = posB.score > posA.score;
-    const winnerLabel = aWin ? `<span class="rcmp-pwin">${esc(A.abbr)} wins</span>`
-                     : bWin ? `<span class="rcmp-pwin">${esc(B.abbr)} wins</span>`
-                     : `<span class="rcmp-ptie">even</span>`;
     return `<div class="rcmp-prow">
       <div class="rcmp-phead-row">
-        <div class="rcmp-pscoreA ${aWin?'win':''}">${posA.score}</div>
+        <div class="rcmp-pscoreA ${aWin?'win':''}">${aWin?'<span class="rcmp-check">✓</span> ':''}${posA.score}</div>
         <div class="rcmp-pname-row">
           <span class="rcmp-poslabel">${esc(POS_LABELS[posA.pos] || posA.pos)} <code>${posA.pos}</code></span>
-          ${aWin ? `<span class="rcmp-check left">✓</span>` : bWin ? `<span class="rcmp-check right">✓</span>` : ''}
           <span class="rcmp-depth">(top ${cfg.depths[posA.pos]} compared)</span>
         </div>
-        <div class="rcmp-pscoreB ${bWin?'win':''}">${posB.score}</div>
+        <div class="rcmp-pscoreB ${bWin?'win':''}">${posB.score}${bWin?' <span class="rcmp-check">✓</span>':''}</div>
       </div>
       ${playerTable(posA.players, aSlug)}
       ${playerTable(posB.players, bSlug)}
@@ -1347,20 +1351,20 @@ VIEWS.compare = async function(_, __, ___, q){
         <div class="rcmp-rcol"><div class="rcmp-rlbl">${esc(A.abbr)} bonus / penalty</div>${posA.reasons.length?posA.reasons.map(r=>`<div>· ${esc(r)}</div>`).join(''):'<div class="rcmp-empty-r">—</div>'}</div>
         <div class="rcmp-rcol"><div class="rcmp-rlbl">${esc(B.abbr)} bonus / penalty</div>${posB.reasons.length?posB.reasons.map(r=>`<div>· ${esc(r)}</div>`).join(''):'<div class="rcmp-empty-r">—</div>'}</div>
       </div>` : ''}
-      <div class="rcmp-winner-strip">${winnerLabel}</div>
     </div>`;
   };
 
-  /* Render a unit (one or more positions grouped) */
+  /* Render a unit (one or more positions grouped).
+     Single ✓ per unit — placed only next to the winning side's total. */
   const unitBlock = (uA, uB) => {
     const aWin = uA.total > uB.total;
     const bWin = uB.total > uA.total;
     const rows = uA.subs.map((sa, i) => positionRow(sa, uB.subs[i])).join('');
     return `<div class="rcmp-unit">
       <div class="rcmp-uhead">
-        <span class="rcmp-uscore ${aWin?'win':''}">${uA.total}</span>
-        <span class="rcmp-uname">${esc(uA.name)} ${aWin?'<span class="rcmp-check">✓</span>':bWin?'<span class="rcmp-check right">✓</span>':''}</span>
-        <span class="rcmp-uscore right ${bWin?'win':''}">${uB.total}</span>
+        <span class="rcmp-uscore ${aWin?'win':''}">${aWin?'<span class="rcmp-check">✓</span> ':''}${uA.total}</span>
+        <span class="rcmp-uname">${esc(uA.name)}</span>
+        <span class="rcmp-uscore right ${bWin?'win':''}">${uB.total}${bWin?' <span class="rcmp-check">✓</span>':''}</span>
       </div>
       ${rows}
     </div>`;
@@ -1381,10 +1385,11 @@ VIEWS.compare = async function(_, __, ___, q){
       </div>`;
   };
 
-  const tabsHTML = `<div class="pill-tabs" style="margin:18px 0 12px">
+  const tabsHTML = `<div class="pill-tabs cmp-tab-row" style="margin:18px 0 12px">
     <button class="${tab==='season'?'on':''}" onclick="location.hash='#/compare?a=${aSlug}&b=${bSlug}&tab=season'">Season Stats</button>
     <button class="${tab==='offense'?'on':''}" onclick="location.hash='#/compare?a=${aSlug}&b=${bSlug}&tab=offense'">Offense (Roster)</button>
     <button class="${tab==='defense'?'on':''}" onclick="location.hash='#/compare?a=${aSlug}&b=${bSlug}&tab=defense'">Defense (Roster)</button>
+    <button class="cmp-cfg-inline" onclick="window.cfgOpen()">⚙ Configure</button>
   </div>`;
 
   let body = '';
@@ -1511,7 +1516,6 @@ function cfgPanelHTML(cfg){
   const offPositions = ['QB','HB','FB','WR','TE','C','G','T','K'];
   const defPositions = ['DE','DT','LB','CB','S','P'];
   return `
-    <button class="cfg-toggle" type="button" onclick="window.cfgOpen()">⚙ Configure</button>
     <div class="cfg-overlay" onclick="window.cfgClose()"></div>
     <aside class="cfg-panel" aria-hidden="true">
       <div class="cfg-head">

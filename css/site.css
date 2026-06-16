@@ -696,14 +696,16 @@ main { min-height: 70vh; }
 /* ---------------------------------------------------------------- */
 /* Compare — configuration flyout panel                              */
 /* ---------------------------------------------------------------- */
-.cfg-toggle {
-  position: fixed; right: 18px; bottom: 24px; z-index: 100;
+/* Inline Configure button — sits in the tab row right after the Defense pill */
+.cmp-tab-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cmp-cfg-inline {
+  margin-left: auto;
   background: var(--ink-2); color: #fff; border: 1px solid var(--ink-3); border-radius: 999px;
-  padding: 10px 18px; font-family: var(--font-head); font-size: 12px; letter-spacing: .08em;
+  padding: 7px 16px; font-family: var(--font-head); font-size: 12.5px; letter-spacing: .07em;
   text-transform: uppercase; cursor: pointer;
-  box-shadow: var(--shadow-2); transition: background .15s, transform .15s;
+  transition: background .15s, color .15s, border-color .15s;
 }
-.cfg-toggle:hover { background: var(--accent); transform: translateY(-2px); }
+.cmp-cfg-inline:hover { background: var(--accent); border-color: var(--accent); }
 
 .cfg-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
@@ -743,7 +745,7 @@ main { min-height: 70vh; }
   .rcmp-phead-row { grid-template-columns: 60px 1fr 60px; padding: 10px 14px; }
   .rcmp-pscoreA, .rcmp-pscoreB { font-size: 22px; }
   .rcmp-reasons { grid-template-columns: 1fr; }
-  .cfg-toggle { right: 12px; bottom: 16px; padding: 8px 14px; }
+  .cmp-cfg-inline { margin-left: 0; }
 }
 
 @media (max-width: 760px){
