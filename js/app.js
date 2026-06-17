@@ -1259,7 +1259,7 @@ VIEWS.compare = async function(_, __, ___, q){
   const sos = await getJSON(`data/${App.season}/sos.json`).catch(() => ({}));
   const rosters = await getJSON(`data/${App.season}/rosters.json`).catch(() => ({}));
   const aSlug = q.get('a') || 'texas';
-  const bSlug = q.get('b') || 'notre-dame';
+  const bSlug = q.get('b') || 'tennessee';
   const tab = q.get('tab') || 'season';
   const A = T(aSlug), B = T(bSlug);
 
