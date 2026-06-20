@@ -1,5 +1,15 @@
 [
  {
+  "id": "szhN9a2oIfA",
+  "title": "28W04ORE@ND",
+  "published": "2026-06-20T06:44:10+00:00",
+  "season": 2028,
+  "week": 4,
+  "away": "oregon",
+  "home": "notre-dame",
+  "rev": 1
+ },
+ {
   "id": "WRfwwDnrFk8",
   "title": "28W04ARK@TENN",
   "published": "2026-06-20T05:33:34+00:00",
@@ -137,16 +147,6 @@
   "week": 2,
   "away": "clemson",
   "home": "boston-college",
-  "rev": 1
- },
- {
-  "id": "XpjLeZf1KA4",
-  "title": "28W02OSU@TEX",
-  "published": "2026-06-07T08:51:13+00:00",
-  "season": 2028,
-  "week": 2,
-  "away": "ohio-state",
-  "home": "texas",
   "rev": 1
  }
 ]
