@@ -571,41 +571,178 @@ VIEWS.schedule = async function(){
 };
 
 /* ------------------------------ stats ---------------------------- */
+/* Sortable stats table builder.
+   key = which column to sort by (string column key), dir = 'desc' or 'asc'.
+   Header click toggles direction; first click on a new column sorts desc. */
+function statsTable(rows, cols, opts){
+  const sortKey = opts.sortKey, sortDir = opts.sortDir;
+  const scope = opts.scope;  // 'players' or 'teams' — determines name cell rendering
+  const sorted = [...rows].sort((a,b) => {
+    const av = sortKey === '__rank__' ? 0 : a[sortKey];
+    const bv = sortKey === '__rank__' ? 0 : b[sortKey];
+    if (typeof av === 'string' || typeof bv === 'string') {
+      return sortDir === 'desc' ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
+    }
+    return sortDir === 'desc' ? (+bv||0) - (+av||0) : (+av||0) - (+bv||0);
+  });
+  const arrow = key => key === sortKey ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '';
+  const head = cols.map((c,i)=>{
+    const ta = i < 2 ? 'left' : 'right';
+    const padL = i === 0 ? 'padding-left:16px' : '';
+    return `<th style="text-align:${ta};${padL};cursor:pointer;user-select:none;white-space:nowrap" onclick="window.sortStats('${c.key}')" title="Click to sort by ${esc(c.label)}">${esc(c.label)}<span style="color:var(--gold);font-size:9px">${arrow(c.key)}</span></th>`;
+  }).join('');
+  const nameCell = scope === 'teams'
+    ? r => `<td style="font-weight:600;text-align:left;padding-left:16px"><a href="#/teams/${r.team}" style="display:inline-flex;align-items:center;gap:8px"><img src="${logo(r.team)}" style="width:20px;height:20px" alt="">${esc(T(r.team).name)}</a></td>`
+    : (r,i) => `<td style="font-weight:600;text-align:left;padding-left:16px">${i+1}. ${esc(r.name)} <span style="color:var(--muted-2);font-size:11px">${esc(r.pos||'')}</span></td>
+                <td style="text-align:left"><a href="#/teams/${r.team}" style="display:inline-flex;align-items:center;gap:6px"><img src="${logo(r.team)}" style="width:18px;height:18px" alt="">${esc(T(r.team).abbr)}</a></td>`;
+  const body = sorted.slice(0, opts.limit ?? 25).map((r,i) => `<tr>
+    ${nameCell(r,i)}
+    ${cols.slice(scope==='teams'?1:2).map(c => `<td style="text-align:right">${r[c.key] ?? ''}</td>`).join('')}
+  </tr>`).join('');
+  return `<div class="card reveal"><table class="box-table">
+    <tr>${head}</tr>
+    ${body}
+  </table></div>`;
+}
+
+// Click handler — toggles direction, updates URL params.
+window.sortStats = function(key){
+  const hash = (location.hash || '#/').slice(2);
+  const [path, search] = hash.split('?');
+  const params = new URLSearchParams(search || '');
+  const curKey = params.get('sort');
+  const curDir = params.get('dir') || 'desc';
+  if (curKey === key) {
+    params.set('dir', curDir === 'desc' ? 'asc' : 'desc');
+  } else {
+    params.set('sort', key);
+    params.set('dir', 'desc');
+  }
+  location.hash = '#/' + path + '?' + params.toString();
+};
+
 VIEWS.stats = async function(_, __, ___, q){
   const wk = await weekData();
+  const scope = (q && q.get('scope')) || 'players';
   const cat = (q && q.get('cat')) || 'passing';
-  const defs = {
-    passing:   { title:'Passing', cols:['Player','Team','Att','Com','Pct','Yds','Avg','TD','INT','RTG'], row:p=>[p.att,p.com,p.pct,p.yds,p.avg,p.td,p.int,p.rtg] },
-    rushing:   { title:'Rushing', cols:['Player','Team','Att','Yds','Avg','Lg','TD'], row:p=>[p.att,p.yds,p.avg,p.lg,p.td] },
-    receiving: { title:'Receiving', cols:['Player','Team','Rec','Yds','Avg','Lg','TD'], row:p=>[p.rec,p.yds,p.avg,p.lg,p.td] },
-    sacks:     { title:'Sacks', cols:['Player','Team','Sacks','Safeties'], row:p=>[p.sacks,p.safeties] },
-    interceptions: { title:'Interceptions', cols:['Player','Team','INT','Ret Yds','Lg','TD'], row:p=>[p.int,p.yds,p.lg,p.td] },
-    tackles:   { title:'Tackles', cols:['Player','Team','Tackles'], row:p=>[p.tackles] },
-    scoring:   { title:'Scoring', cols:['Player','Team','Rush TD','Rec TD','Tot TD','XP','FG','Pts'], row:p=>[p.rushTD,p.recTD,p.totTD,p.xp,p.fg,p.pts] },
+  const sortFromUrl = q && q.get('sort');
+  const dir = (q && q.get('dir')) || 'desc';
+
+  // Individual leaders columns + default sort key per category
+  const PLAYER_COLS = {
+    passing: { title:'Passing', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' },
+      { key:'att', label:'Att' }, { key:'com', label:'Com' }, { key:'pct', label:'Pct' },
+      { key:'yds', label:'Yds' }, { key:'avg', label:'Avg' }, { key:'td', label:'TD' },
+      { key:'int', label:'INT' }, { key:'rtg', label:'RTG' }
+    ], defaultSort:'yds' },
+    rushing: { title:'Rushing', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' },
+      { key:'att', label:'Att' }, { key:'yds', label:'Yds' }, { key:'avg', label:'Avg' },
+      { key:'lg', label:'Lg' }, { key:'td', label:'TD' }
+    ], defaultSort:'yds' },
+    receiving: { title:'Receiving', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' },
+      { key:'rec', label:'Rec' }, { key:'yds', label:'Yds' }, { key:'avg', label:'Avg' },
+      { key:'lg', label:'Lg' }, { key:'td', label:'TD' }
+    ], defaultSort:'yds' },
+    sacks: { title:'Sacks', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' },
+      { key:'sacks', label:'Sacks' }, { key:'safeties', label:'Safeties' }
+    ], defaultSort:'sacks' },
+    interceptions: { title:'Interceptions', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' },
+      { key:'int', label:'INT' }, { key:'yds', label:'Ret Yds' }, { key:'lg', label:'Lg' }, { key:'td', label:'TD' }
+    ], defaultSort:'int' },
+    tackles: { title:'Tackles', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' }, { key:'tackles', label:'Tackles' }
+    ], defaultSort:'tackles' },
+    scoring: { title:'Scoring', cols:[
+      { key:'name', label:'Player' }, { key:'team', label:'Team' },
+      { key:'rushTD', label:'Rush TD' }, { key:'recTD', label:'Rec TD' }, { key:'totTD', label:'Tot TD' },
+      { key:'xp', label:'XP' }, { key:'fg', label:'FG' }, { key:'pts', label:'Pts' }
+    ], defaultSort:'pts' },
   };
-  const d = defs[cat] || defs.passing;
-  const rows = wk.leaders[cat] || [];
-  const teamRows = (wk.teamSeasonStats.totalYards||[]).map((r,i)=>{
-    const def = (wk.teamSeasonStats.oppTotalYards||[]).find(x=>x.team===r.team);
-    return { team:r.team, off: r.ydsGame ?? r.yds, def: def ? (def.ydsGame ?? def.yds) : '—', i };
-  });
+  // Team stats columns — key 'team' is the slug we render with logo + name.
+  // Column layouts must match the parser's teamTable() schema in parse-fbpro.mjs
+  // (T15/O15 are 9-column scoring tables, T19/O19 are 3-column yards tables).
+  const TEAM_COLS = {
+    passing: { title:'Passing', cols:[
+      { key:'team', label:'Team' }, { key:'att', label:'Att' }, { key:'com', label:'Com' },
+      { key:'pct', label:'Pct' }, { key:'yds', label:'Yds' }, { key:'avg', label:'Avg' },
+      { key:'td', label:'TD' }, { key:'int', label:'INT' }, { key:'rtg', label:'RTG' }
+    ], defaultSort:'yds' },
+    rushing: { title:'Rushing', cols:[
+      { key:'team', label:'Team' }, { key:'att', label:'Att' }, { key:'yds', label:'Yds' },
+      { key:'avg', label:'Avg' }, { key:'lg', label:'Lg' }, { key:'td', label:'TD' }
+    ], defaultSort:'yds' },
+    sacks: { title:'Sacks', cols:[
+      { key:'team', label:'Team' }, { key:'sacks', label:'Sacks' }, { key:'safeties', label:'Safeties' }
+    ], defaultSort:'sacks' },
+    interceptions: { title:'Interceptions', cols:[
+      { key:'team', label:'Team' }, { key:'int', label:'INT' }, { key:'yds', label:'Ret Yds' },
+      { key:'avg', label:'Avg' }, { key:'lg', label:'Lg' }, { key:'td', label:'TD' }
+    ], defaultSort:'int' },
+    tackles: { title:'Tackles', cols:[
+      { key:'team', label:'Team' }, { key:'tackles', label:'Tackles' }
+    ], defaultSort:'tackles' },
+    scoring: { title:'Scoring Offense', cols:[
+      { key:'team', label:'Team' }, { key:'rushTD', label:'Rush TD' }, { key:'recTD', label:'Rec TD' },
+      { key:'totTD', label:'Tot TD' }, { key:'xp', label:'XP' }, { key:'fg', label:'FG' }, { key:'pts', label:'Pts' }
+    ], defaultSort:'pts' },
+    totalYards: { title:'Total Offense', cols:[
+      { key:'team', label:'Team' }, { key:'rushYds', label:'Rush Yds' }, { key:'passYds', label:'Pass Yds' }, { key:'totYds', label:'Total Yds' }
+    ], defaultSort:'totYds' },
+    oppTotalYards: { title:'Total Defense', cols:[
+      { key:'team', label:'Team' }, { key:'rushYds', label:'Rush Yds' }, { key:'passYds', label:'Pass Yds' }, { key:'totYds', label:'Total Yds' }
+    ], defaultSort:'totYds' },
+    oppScoring: { title:'Scoring Defense', cols:[
+      { key:'team', label:'Team' }, { key:'rushTD', label:'Rush TD' }, { key:'recTD', label:'Rec TD' },
+      { key:'totTD', label:'Tot TD' }, { key:'xp', label:'XP' }, { key:'fg', label:'FG' }, { key:'pts', label:'Pts allowed' }
+    ], defaultSort:'pts' },
+  };
+
+  const groupDefs = scope === 'teams' ? TEAM_COLS : PLAYER_COLS;
+  const d = groupDefs[cat] || groupDefs.passing;
+  const cat2 = groupDefs[cat] ? cat : 'passing';
+
+  // Resolve sort key — URL param overrides, falls back to the category default;
+  // for player tables, sorting by 'name' or 'team' is allowed too.
+  const sortKey = sortFromUrl || d.defaultSort;
+  // Source rows: leaders (individual) or teamSeasonStats (team).
+  const sourceRows = scope === 'teams'
+    ? (wk.teamSeasonStats?.[cat2] || [])
+    : (wk.leaders?.[cat2] || []);
+
+  // Numeric coercion for team rows since the parser stores them as strings
+  const rows = scope === 'teams'
+    ? sourceRows.map(r => {
+        const o = { ...r };
+        for (const k of Object.keys(o)) if (k !== 'team' && o[k] !== undefined) {
+          const n = parseFloat(String(o[k]).replace(/,/g,''));
+          if (!isNaN(n)) o[k] = n;
+        }
+        return o;
+      })
+    : sourceRows;
+
+  const tablesHTML = rows.length
+    ? statsTable(rows, d.cols, { sortKey, sortDir: dir, scope: scope === 'teams' ? 'teams' : 'players', limit: scope === 'teams' ? 18 : 25 })
+    : `<div class="empty card"><b>No ${esc(d.title)} data yet</b>Either the category hasn't been parsed or this week's source didn't include it.</div>`;
+
+  const scopeTabs = `<div class="pill-tabs" style="margin-bottom:8px">
+    <button class="${scope==='players'?'on':''}" onclick="location.hash='#/stats?scope=players&cat=${cat2}'">Individual</button>
+    <button class="${scope==='teams'?'on':''}" onclick="location.hash='#/stats?scope=teams&cat=${cat2}'">Team</button>
+  </div>`;
+  const catTabs = `<div class="pill-tabs">${Object.entries(groupDefs).map(([k,v])=>
+    `<button class="${k===cat2?'on':''}" onclick="location.hash='#/stats?scope=${scope}&cat=${k}'">${esc(v.title)}</button>`
+  ).join('')}</div>`;
+
   return `
-    <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Statistics Hub</h2><span class="sub">Season totals through Week ${wk.week}</span></div>
-    <div class="pill-tabs">${Object.entries(defs).map(([k,v])=>`<button class="${k===cat?'on':''}" onclick="location.hash='#/stats?cat=${k}'">${v.title}</button>`).join('')}</div>
-    <div class="card reveal">
-      <table class="box-table">
-        <tr>${d.cols.map((c,i)=>`<th ${i<2?'style="text-align:left;padding-left:16px"':''}>${c}</th>`).join('')}</tr>
-        ${rows.slice(0,25).map((p,i)=>`<tr>
-          <td style="font-weight:600">${i+1}. ${esc(p.name)} <span style="color:var(--muted-2);font-size:11px">${esc(p.pos)}</span></td>
-          <td style="text-align:left"><span style="display:inline-flex;align-items:center;gap:6px"><img src="${logo(p.team)}" style="width:18px;height:18px" alt="">${esc(T(p.team).abbr)}</span></td>
-          ${d.row(p).map(v=>`<td>${v ?? ''}</td>`).join('')}</tr>`).join('')}
-      </table></div>
-    ${teamRows.length ? `
-    <div class="section-h"><span class="bar"></span><h2>Team Offense vs Defense</h2><span class="sub">Yards per game</span></div>
-    <div class="card reveal"><table class="box-table">
-      <tr><th style="text-align:left;padding-left:16px">Team</th><th>Off Yds/G</th><th>Def Yds/G</th></tr>
-      ${teamRows.map(r=>`<tr><td><span style="display:inline-flex;align-items:center;gap:8px;font-weight:600"><img src="${logo(r.team)}" style="width:20px;height:20px" alt="">${esc(T(r.team).name)}</span></td><td>${r.off}</td><td>${r.def}</td></tr>`).join('')}
-    </table></div>` : ''}`;
+    <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Statistics Hub</h2><span class="sub">Season totals through Week ${wk.week} · click any column to sort</span></div>
+    ${scopeTabs}
+    ${catTabs}
+    ${tablesHTML}`;
 };
 
 /* ------------------------------ teams ---------------------------- */
@@ -733,8 +870,23 @@ document.addEventListener('click', e => {
 });
 
 /* ----------------------------- awards ---------------------------- */
+async function loadPowHistory(season){
+  try {
+    const r = await fetch(`data/${season}/pow-history.json`);
+    if (!r.ok) return [];
+    return await r.json();
+  } catch { return []; }
+}
 VIEWS.awards = async function(){
   const wk = await weekData();
+  const powHist = await loadPowHistory(App.season);
+  // 'Player Name|team' -> number of POW awards this season
+  const powCount = new Map(powHist.map(p => [`${p.name}|${p.team}`, (p.weeks||[]).length]));
+  // Teams with zero losses get a Heisman boost
+  const undefeated = new Set();
+  (wk.standings||[]).forEach(c => c.divisions.forEach(d => d.teams.forEach(t => {
+    if (t.w > 0 && t.l === 0) undefeated.add(t.team);
+  })));
 
   // weekly honors computed from this week's box scores
   const perf = { pass:[], rush:[], recv:[], def:[] };
@@ -758,17 +910,32 @@ VIEWS.awards = async function(){
     ['Receiving Performance', top(perf.recv)], ['Defensive Player of the Week', top(perf.def)],
   ].filter(([,p])=>p);
 
-  // Heisman watch from season leaders
+  // Heisman watch from season leaders.
+  // Formula = production points + (POW count × 25) + (undefeated-team boost).
+  // The undefeated boost is large enough that any qualifying skill-position
+  // starter from an undefeated team outranks an equally-productive player
+  // from a 1-loss team.
   const score = new Map();
   const add = (p, pts) => {
     const k = `${p.name}|${p.team}`;
-    const cur = score.get(k) || { ...p, pts: 0 };
+    const cur = score.get(k) || { ...p, pts: 0, pow: powCount.get(k) || 0, undefeated: undefeated.has(p.team) };
     cur.pts += pts; score.set(k, cur);
   };
   (wk.leaders.passing||[]).forEach(p=>add(p, p.yds*.05 + p.td*5 - p.int*4));
   (wk.leaders.rushing||[]).forEach(p=>add(p, p.yds*.12 + p.td*6));
   (wk.leaders.receiving||[]).forEach(p=>add(p, p.yds*.09 + p.td*6));
-  const heisman = [...score.values()].sort((a,b)=>b.pts-a.pts).slice(0,8);
+  // Apply POW + undefeated modifiers after raw production is summed
+  for (const p of score.values()) {
+    p.pow = powCount.get(`${p.name}|${p.team}`) || 0;
+    p.undefeated = undefeated.has(p.team);
+    p.pts += p.pow * 25;
+    if (p.undefeated) p.pts += 200;
+  }
+  const heisman = [...score.values()].sort((a,b) => {
+    // Primary tiebreaker: undefeated team players ALWAYS rank above defeated ones
+    if (a.undefeated !== b.undefeated) return a.undefeated ? -1 : 1;
+    return b.pts - a.pts;
+  }).slice(0,8);
   const maxH = heisman[0]?.pts || 1;
 
   return `
@@ -781,10 +948,12 @@ VIEWS.awards = async function(){
         <b style="font-family:var(--font-head);font-size:17px">${esc(p.name)}</b>
         <div style="color:var(--muted);font-size:12px">${esc(T(p.team).name)} — ${esc(p.line)}</div></div></div>`).join('')}
     </div>
-    <div class="section-h"><span class="bar"></span><h2>PCFL Heisman Watch</h2><span class="sub">Computed from season production through Week ${wk.week}</span></div>
-    <div class="card reveal" style="max-width:760px">${heisman.map((p,i)=>`
+    <div class="section-h"><span class="bar"></span><h2>PCFL Heisman Watch</h2><span class="sub">Production · Player-of-the-Week awards · undefeated-team boost</span></div>
+    <div class="card reveal" style="max-width:820px">${heisman.map((p,i)=>`
       <div class="heisman-row"><span class="rk">${i+1}</span><img src="${logo(p.team)}" alt="">
-        <div class="nm">${esc(p.name)}<span>${esc(p.pos)} · ${esc(T(p.team).name)}</span></div>
+        <div class="nm">${esc(p.name)}
+          <span>${esc(p.pos)} · ${esc(T(p.team).name)}${p.undefeated ? ' <b class="heis-undef" title="Player on an undefeated team">UNDEFEATED</b>' : ''}${p.pow ? ` <b class="heis-pow" title="${p.pow} Player of the Week award${p.pow>1?'s':''} this season">${p.pow}× POW</b>` : ''}</span>
+        </div>
         <div style="flex:1;max-width:220px"><div class="ptsbar" style="height:6px;background:#eef0f3;border-radius:4px;overflow:hidden"><i data-w="${Math.round(p.pts/maxH*100)}" style="display:block;height:100%;background:linear-gradient(90deg,var(--gold),#d6a012)"></i></div></div>
         <span class="pts">${Math.round(p.pts)}</span></div>`).join('')}
     </div>`;

@@ -313,34 +313,44 @@ function parseSeason(html){
     tackles: sec('I10').map(l=>parseWideRow(l,['tackles'])).filter(Boolean),
     scoring: sec('I15').map(parseScoringRow).filter(Boolean),
   };
-  // team tables
+  // team tables — strips bracketed rank markers ("349 [10]") that some FBPro98
+  // team sections (T19/O19) interleave between numeric columns; cols must
+  // match the section's actual non-rank values, in order.
   const teamTable = (name, cols) => sec(name).map(l=>{
     const txt = strip(l);
     const m = txt.match(/^\s*(\d+)\s+([A-Za-z .]+?)\s{2,}(.+)$/);
     if (!m) return null;
     const slug = teamFrom(m[2]); if (!slug) return null;
-    const vals = m[3].trim().split(/\s+/);
+    const cleaned = m[3].replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+    const vals = cleaned.split(/\s+/);
     const o = { team: slug };
     cols.forEach((c,i)=>o[c]=vals[i]);
     return o;
   }).filter(Boolean);
   const teamStats = {
-    passing: teamTable('T1',['att','com','pct','yds','avg','lg','td','int','rtg','sksYds']),
-    rushing: teamTable('T2',['att','yds','avg','lg','td']),
-    totalYards: teamTable('T19',['plays','yds','avg','ydsGame']),
-    oppTotalYards: teamTable('O19',['plays','yds','avg','ydsGame']),
-    scoring: teamTable('T15',['pts','ptsGame']),
-    oppScoring: teamTable('O15',['pts','ptsGame']),
+    passing:       teamTable('T1',  ['att','com','pct','yds','avg','lg','td','int','rtg','sksYds']),
+    rushing:       teamTable('T2',  ['att','yds','avg','lg','td']),
+    interceptions: teamTable('T4',  ['int','yds','avg','lg','td']),
+    sacks:         teamTable('T9',  ['sacks','safeties']),
+    tackles:       teamTable('T10', ['tackles']),
+    scoring:       teamTable('T15', ['rushTD','recTD','miscTD','totTD','twoPt','xp','fg','sft','pts']),
+    totalYards:    teamTable('T19', ['rushYds','passYds','totYds']),
+    oppPassing:    teamTable('O1',  ['att','com','pct','yds','avg','lg','td','int','rtg','sksYds']),
+    oppRushing:    teamTable('O2',  ['att','yds','avg','lg','td']),
+    oppScoring:    teamTable('O15', ['rushTD','recTD','miscTD','totTD','twoPt','xp','fg','sft','pts']),
+    oppTotalYards: teamTable('O19', ['rushYds','passYds','totYds']),
   };
   return { leaders, teamStats };
 }
 function parsePassingRow(l){
   const txt = strip(l);
-  const m = txt.match(/^\s*(\d+)\s(.{15})(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\S+)/);
+  // Yards is allowed to contain thousand-separator commas ("1,432") once a QB
+  // crosses 1,000 yards mid-season. Earlier weeks pass through too.
+  const m = txt.match(/^\s*(\d+)\s(.{15})(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d,]+)\s+([\d.]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\S+)/);
   if (!m) return null;
   const team = teamFrom(m[3]); if (!team) return null;
   return { name: fixName(m[2].trim()), team, yr: m[4], pos:'QB',
-    att:+m[5], com:+m[6], pct:+m[7], yds:+m[8], avg:+m[9], lg:+m[10], td:+m[11], int:+m[12], rtg:+m[13], sksYds:m[14] };
+    att:+m[5], com:+m[6], pct:+m[7], yds:num(m[8]), avg:+m[9], lg:+m[10], td:+m[11], int:+m[12], rtg:+m[13], sksYds:m[14] };
 }
 function parseWideRow(l, cols){
   const txt = strip(l);
@@ -986,6 +996,7 @@ async function main(){
 
   for (const season of seasons){
     const weekJsonsForSeason = [];   // collected for SoS + playoff after the week loop
+    const powHistory = {};           // 'Player Name|team' -> { name, team, pos, weeks: [n,...] }
     const weekDirs = readdirSync(join(DROPS,season)).filter(d=>/^week\d+$/.test(d))
       .sort((a,b)=>num(a)-num(b));
     const weeks = [];
@@ -1095,6 +1106,13 @@ async function main(){
       writeFileSync(join(outDir, `week${week}.json`), JSON.stringify(weekJson));
       weekJsonsForSeason.push(weekJson);
       weeks.push(week);
+      // Track POW awards across the season for the Heisman watch
+      if (gameData.playerOfWeek) {
+        const p = gameData.playerOfWeek;
+        const key = `${p.name}|${p.team}`;
+        if (!powHistory[key]) powHistory[key] = { name: p.name, team: p.team, pos: p.pos, weeks: [] };
+        powHistory[key].weeks.push(week);
+      }
       prevRanks = new Map(standData.powerRankings.map(p=>[p.team,p.rank]));
       console.log(`✓ ${season} week ${week}: ${gameData.games.length} games, ${standData.powerRankings.length} ranked, ${Object.keys(seasonStats.leaders).filter(k=>seasonStats.leaders[k]?.length).length} leader boards`);
 
@@ -1130,6 +1148,8 @@ async function main(){
 
     if (latestSchedule) writeFileSync(join(DATA,season,'schedule.json'), JSON.stringify(latestSchedule));
     if (latestRosters) writeFileSync(join(DATA,season,'rosters.json'), JSON.stringify(latestRosters));
+    // Player-of-the-Week season history for the Heisman watch
+    writeFileSync(join(DATA, season, 'pow-history.json'), JSON.stringify(Object.values(powHistory)));
 
     // -------------- Predictive engine (per season) ---------------
     if (latestSchedule && weekJsonsForSeason.length){
