@@ -861,6 +861,10 @@ main { min-height: 70vh; }
 .roster-table td { padding: 6px 10px; border-bottom: 1px solid #f0f2f4; }
 .roster-table tr:hover td { background: #f7f8fa; }
 .roster-table th.attr-h { text-align: center; padding: 8px 4px; cursor: help; border-left: 1px solid rgba(255,255,255,.07); }
+/* Compare-page rosters are short and live in a horizontally scrollable wrap;
+   sticky headers there end up pinned to the bottom of the table as the page
+   scrolls past, which looks like the header is "upside down". Force static. */
+.cmp-team-table-wrap .roster-table th { position: static !important; top: auto !important; }
 .roster-table td.attr { text-align: center; padding: 4px 4px; line-height: 1.2; border-left: 1px solid #f4f5f7; font-variant-numeric: tabular-nums; }
 .roster-table td.attr b { display: block; font-size: 12.5px; font-weight: 700; }
 .roster-table td.attr span { display: block; font-size: 10px; color: var(--muted-2); }
@@ -903,6 +907,8 @@ main { min-height: 70vh; }
 .heisman-row .nm { font-weight: 700; flex: 1; }
 .heisman-row .nm span { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
 .heisman-row .pts { font-family: var(--font-head); color: var(--red); font-weight: 600; }
+.heis-undef { display: inline-block; margin-left: 6px; font-size: 9px; letter-spacing: .08em; padding: 1px 6px; border-radius: 3px; background: var(--gold); color: var(--ink); font-weight: 700; vertical-align: 1px; }
+.heis-pow { display: inline-block; margin-left: 4px; font-size: 9px; letter-spacing: .04em; padding: 1px 6px; border-radius: 3px; background: var(--ink-2); color: #fff; font-weight: 700; vertical-align: 1px; }
 
 /* ---------------------------------------------------------------- */
 /* Media                                                             */
