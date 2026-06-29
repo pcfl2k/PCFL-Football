@@ -882,11 +882,19 @@ VIEWS.awards = async function(){
   const powHist = await loadPowHistory(App.season);
   // 'Player Name|team' -> number of POW awards this season
   const powCount = new Map(powHist.map(p => [`${p.name}|${p.team}`, (p.weeks||[]).length]));
-  // Teams with zero losses get a Heisman boost
-  const undefeated = new Set();
+  // Team record lookup — used as a multiplier on production, so the Heisman
+  // weights teams that are dominating WITHOUT making it a hard cutoff.
+  // Win pct ^ 0.6 keeps 5-1 close to 5-0 (0.91 vs 1.0) but punishes 3-3 hard.
+  const recordByTeam = new Map();
   (wk.standings||[]).forEach(c => c.divisions.forEach(d => d.teams.forEach(t => {
-    if (t.w > 0 && t.l === 0) undefeated.add(t.team);
+    const games = t.w + t.l; const wpct = games ? t.w/games : 0;
+    recordByTeam.set(t.team, { w:t.w, l:t.l, wpct, mult: Math.pow(wpct, 0.6) });
   })));
+  // Index leaders by player so we can pull each ranked candidate's full
+  // season stat line for the card.
+  const passingBy = new Map((wk.leaders.passing||[]).map(p => [`${p.name}|${p.team}`, p]));
+  const rushingBy = new Map((wk.leaders.rushing||[]).map(p => [`${p.name}|${p.team}`, p]));
+  const recvBy    = new Map((wk.leaders.receiving||[]).map(p => [`${p.name}|${p.team}`, p]));
 
   // weekly honors computed from this week's box scores
   const perf = { pass:[], rush:[], recv:[], def:[] };
@@ -911,32 +919,47 @@ VIEWS.awards = async function(){
   ].filter(([,p])=>p);
 
   // Heisman watch from season leaders.
-  // Formula = production points + (POW count × 25) + (undefeated-team boost).
-  // The undefeated boost is large enough that any qualifying skill-position
-  // starter from an undefeated team outranks an equally-productive player
-  // from a 1-loss team.
+  // Formula = (raw production × team-record multiplier) + (POW count × 25).
+  // The multiplier is win%^0.6, so a 1-loss team is only mildly penalized
+  // (~0.91× at 5-1) but a 3-3 team is hit hard (~0.71×). Big production on a
+  // strong-but-not-perfect team can clear an undefeated player with weaker
+  // numbers — e.g. HB Smothers (4-1, 397y/6TD) clears HB Gibson (5-0, 348y/3TD).
   const score = new Map();
   const add = (p, pts) => {
     const k = `${p.name}|${p.team}`;
-    const cur = score.get(k) || { ...p, pts: 0, pow: powCount.get(k) || 0, undefeated: undefeated.has(p.team) };
-    cur.pts += pts; score.set(k, cur);
+    const cur = score.get(k) || { ...p, prod: 0 };
+    cur.prod += pts; score.set(k, cur);
   };
   (wk.leaders.passing||[]).forEach(p=>add(p, p.yds*.05 + p.td*5 - p.int*4));
   (wk.leaders.rushing||[]).forEach(p=>add(p, p.yds*.12 + p.td*6));
   (wk.leaders.receiving||[]).forEach(p=>add(p, p.yds*.09 + p.td*6));
-  // Apply POW + undefeated modifiers after raw production is summed
   for (const p of score.values()) {
+    const rec = recordByTeam.get(p.team) || { w:0, l:0, wpct:0, mult:0 };
+    p.rec = rec;
     p.pow = powCount.get(`${p.name}|${p.team}`) || 0;
-    p.undefeated = undefeated.has(p.team);
-    p.pts += p.pow * 25;
-    if (p.undefeated) p.pts += 200;
+    p.pts = p.prod * (rec.mult || 0.01) + p.pow * 25;
   }
-  const heisman = [...score.values()].sort((a,b) => {
-    // Primary tiebreaker: undefeated team players ALWAYS rank above defeated ones
-    if (a.undefeated !== b.undefeated) return a.undefeated ? -1 : 1;
-    return b.pts - a.pts;
-  }).slice(0,8);
+  const heisman = [...score.values()].sort((a,b) => b.pts - a.pts).slice(0,10);
   const maxH = heisman[0]?.pts || 1;
+
+  // Build the per-player stat line based on position. Pulls from this week's
+  // cumulative season leaders so the card shows the same numbers /stats does.
+  const statLine = p => {
+    const k = `${p.name}|${p.team}`;
+    if (p.pos === 'QB') {
+      const r = passingBy.get(k); if (!r) return '';
+      return `<span class="heis-stat">${r.att} att</span><span class="heis-stat">${r.com} cmp</span><span class="heis-stat">${r.pct}%</span><span class="heis-stat"><b>${r.yds}</b> yds</span><span class="heis-stat"><b>${r.td}</b> TD</span><span class="heis-stat">${r.int} INT</span><span class="heis-stat">${r.rtg} rtg</span>`;
+    }
+    if (p.pos === 'HB' || p.pos === 'FB' || p.pos === 'RB') {
+      const r = rushingBy.get(k); if (!r) return '';
+      return `<span class="heis-stat">${r.att} car</span><span class="heis-stat"><b>${r.yds}</b> yds</span><span class="heis-stat">${r.avg} avg</span><span class="heis-stat">${r.lg} lg</span><span class="heis-stat"><b>${r.td}</b> TD</span>`;
+    }
+    if (p.pos === 'WR' || p.pos === 'TE') {
+      const r = recvBy.get(k); if (!r) return '';
+      return `<span class="heis-stat">${r.rec} rec</span><span class="heis-stat"><b>${r.yds}</b> yds</span><span class="heis-stat">${r.avg} avg</span><span class="heis-stat">${r.lg} lg</span><span class="heis-stat"><b>${r.td}</b> TD</span>`;
+    }
+    return '';
+  };
 
   return `
     ${potwCard(wk)}
@@ -948,13 +971,15 @@ VIEWS.awards = async function(){
         <b style="font-family:var(--font-head);font-size:17px">${esc(p.name)}</b>
         <div style="color:var(--muted);font-size:12px">${esc(T(p.team).name)} — ${esc(p.line)}</div></div></div>`).join('')}
     </div>
-    <div class="section-h"><span class="bar"></span><h2>PCFL Heisman Watch</h2><span class="sub">Production · Player-of-the-Week awards · undefeated-team boost</span></div>
-    <div class="card reveal" style="max-width:820px">${heisman.map((p,i)=>`
-      <div class="heisman-row"><span class="rk">${i+1}</span><img src="${logo(p.team)}" alt="">
-        <div class="nm">${esc(p.name)}
-          <span>${esc(p.pos)} · ${esc(T(p.team).name)}${p.undefeated ? ' <b class="heis-undef" title="Player on an undefeated team">UNDEFEATED</b>' : ''}${p.pow ? ` <b class="heis-pow" title="${p.pow} Player of the Week award${p.pow>1?'s':''} this season">${p.pow}× POW</b>` : ''}</span>
+    <div class="section-h"><span class="bar"></span><h2>PCFL Heisman Watch</h2><span class="sub">Cumulative production weighted by team record</span></div>
+    <div class="card reveal" style="max-width:980px">${heisman.map((p,i)=>`
+      <div class="heisman-row heisman-row-v2"><span class="rk">${i+1}</span><img src="${logo(p.team)}" alt="">
+        <div class="nm">
+          <div class="heis-name-line"><b>${esc(p.name)}</b>${p.pow ? ` <b class="heis-pow" title="${p.pow} Player of the Week award${p.pow>1?'s':''} this season">${p.pow}× POW</b>` : ''}</div>
+          <span class="heis-meta">${esc(p.pos)} · ${esc(T(p.team).name)} · <em class="heis-rec">${p.rec.w}-${p.rec.l}</em></span>
+          <div class="heis-statline">${statLine(p)}</div>
         </div>
-        <div style="flex:1;max-width:220px"><div class="ptsbar" style="height:6px;background:#eef0f3;border-radius:4px;overflow:hidden"><i data-w="${Math.round(p.pts/maxH*100)}" style="display:block;height:100%;background:linear-gradient(90deg,var(--gold),#d6a012)"></i></div></div>
+        <div class="heis-bar"><div class="ptsbar" style="height:6px;background:#eef0f3;border-radius:4px;overflow:hidden"><i data-w="${Math.round(p.pts/maxH*100)}" style="display:block;height:100%;background:linear-gradient(90deg,var(--gold),#d6a012)"></i></div></div>
         <span class="pts">${Math.round(p.pts)}</span></div>`).join('')}
     </div>`;
 };

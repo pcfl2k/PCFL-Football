@@ -907,8 +907,22 @@ main { min-height: 70vh; }
 .heisman-row .nm { font-weight: 700; flex: 1; }
 .heisman-row .nm span { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
 .heisman-row .pts { font-family: var(--font-head); color: var(--red); font-weight: 600; }
-.heis-undef { display: inline-block; margin-left: 6px; font-size: 9px; letter-spacing: .08em; padding: 1px 6px; border-radius: 3px; background: var(--gold); color: var(--ink); font-weight: 700; vertical-align: 1px; }
 .heis-pow { display: inline-block; margin-left: 4px; font-size: 9px; letter-spacing: .04em; padding: 1px 6px; border-radius: 3px; background: var(--ink-2); color: #fff; font-weight: 700; vertical-align: 1px; }
+/* Heisman v2 — record-weighted, with cumulative stat line below the name */
+.heisman-row-v2 { align-items: flex-start; padding: 14px 18px; }
+.heisman-row-v2 .nm { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; font-weight: 400; }
+.heisman-row-v2 .heis-name-line { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.heisman-row-v2 .heis-meta { font-size: 11px; color: var(--muted); }
+.heisman-row-v2 .heis-meta .heis-rec { font-style: normal; font-weight: 700; color: var(--text); }
+.heisman-row-v2 .heis-statline { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.heisman-row-v2 .heis-stat { white-space: nowrap; }
+.heisman-row-v2 .heis-stat b { color: var(--text); font-weight: 700; }
+.heisman-row-v2 .heis-bar { flex: 0 0 180px; align-self: center; }
+.heisman-row-v2 .pts { align-self: center; min-width: 38px; text-align: right; font-size: 16px; }
+@media (max-width: 640px){
+  .heisman-row-v2 .heis-bar { display: none; }
+  .heisman-row-v2 .heis-statline { font-size: 10px; gap: 4px 8px; }
+}
 
 /* ---------------------------------------------------------------- */
 /* Media                                                             */
