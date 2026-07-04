@@ -1,5 +1,75 @@
 [
  {
+  "id": "tNzXKs-5a70",
+  "title": "28W06MICH@ORE",
+  "published": "2026-07-04T07:28:07+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "michigan",
+  "home": "oregon",
+  "rev": 1
+ },
+ {
+  "id": "CW8QAksNhmI",
+  "title": "28W06MIA@ARK",
+  "published": "2026-07-04T07:27:38+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "miami",
+  "home": "arkansas",
+  "rev": 1
+ },
+ {
+  "id": "BXCfIZMILH8",
+  "title": "28W06LSU@BC",
+  "published": "2026-07-04T07:27:22+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "lsu",
+  "home": "boston-college",
+  "rev": 1
+ },
+ {
+  "id": "go9dqSMn7ro",
+  "title": "28W06UCLA@WASH",
+  "published": "2026-07-04T07:27:06+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "ucla",
+  "home": "washington",
+  "rev": 1
+ },
+ {
+  "id": "01ODKq2t3BA",
+  "title": "28W06TENN@TEX",
+  "published": "2026-07-04T07:26:50+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "tennessee",
+  "home": "texas",
+  "rev": 1
+ },
+ {
+  "id": "4r3_5Zpd74c",
+  "title": "28W06OSU@USC",
+  "published": "2026-07-04T07:26:35+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "ohio-state",
+  "home": "usc",
+  "rev": 1
+ },
+ {
+  "id": "T7SPtG8pF44",
+  "title": "28W06ND@OKL",
+  "published": "2026-07-04T00:25:58+00:00",
+  "season": 2028,
+  "week": 6,
+  "away": "notre-dame",
+  "home": "oklahoma",
+  "rev": 1
+ },
+ {
   "id": "-wbO_7-pj_k",
   "title": "28W05TENN@MIA",
   "published": "2026-06-27T06:25:07+00:00",
@@ -77,76 +147,6 @@
   "week": 4,
   "away": "arkansas",
   "home": "tennessee",
-  "rev": 1
- },
- {
-  "id": "ljRR6YjEVjU",
-  "title": "28W04WASH@USC",
-  "published": "2026-06-20T05:33:17+00:00",
-  "season": 2028,
-  "week": 4,
-  "away": "washington",
-  "home": "usc",
-  "rev": 1
- },
- {
-  "id": "GL8wRWFsQso",
-  "title": "28W04UCLA@OSU",
-  "published": "2026-06-20T05:32:59+00:00",
-  "season": 2028,
-  "week": 4,
-  "away": "ucla",
-  "home": "ohio-state",
-  "rev": 1
- },
- {
-  "id": "M1JiPeQhScc",
-  "title": "28W04BC@TEX",
-  "published": "2026-06-20T05:32:44+00:00",
-  "season": 2028,
-  "week": 4,
-  "away": "boston-college",
-  "home": "texas",
-  "rev": 1
- },
- {
-  "id": "EhTlXXa49DQ",
-  "title": "28W03TENN@OSU",
-  "published": "2026-06-13T05:38:03+00:00",
-  "season": 2028,
-  "week": 3,
-  "away": "tennessee",
-  "home": "ohio-state",
-  "rev": 1
- },
- {
-  "id": "kWeCzv_BQBY",
-  "title": "28W03PENNST@ARK",
-  "published": "2026-06-13T05:37:48+00:00",
-  "season": 2028,
-  "week": 3,
-  "away": "penn-state",
-  "home": "arkansas",
-  "rev": 1
- },
- {
-  "id": "pPBMexDfhD8",
-  "title": "28W03BC@COL",
-  "published": "2026-06-13T05:37:34+00:00",
-  "season": 2028,
-  "week": 3,
-  "away": "boston-college",
-  "home": "colorado",
-  "rev": 1
- },
- {
-  "id": "E6hUvVty4W0",
-  "title": "28W03WASH@ORE",
-  "published": "2026-06-13T05:37:16+00:00",
-  "season": 2028,
-  "week": 3,
-  "away": "washington",
-  "home": "oregon",
   "rev": 1
  }
 ]
