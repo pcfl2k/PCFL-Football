@@ -1,5 +1,65 @@
 [
  {
+  "id": "GlqqpCw9AEQ",
+  "title": "28W07BC@TENN",
+  "published": "2026-07-12T05:07:50+00:00",
+  "season": 2028,
+  "week": 7,
+  "away": "boston-college",
+  "home": "tennessee",
+  "rev": 1
+ },
+ {
+  "id": "ZtwwIvyDW6M",
+  "title": "28W07OKL@COL",
+  "published": "2026-07-12T05:07:33+00:00",
+  "season": 2028,
+  "week": 7,
+  "away": "oklahoma",
+  "home": "colorado",
+  "rev": 1
+ },
+ {
+  "id": "EzpNR0RkxPM",
+  "title": "28W07OSU@MIA",
+  "published": "2026-07-12T05:07:19+00:00",
+  "season": 2028,
+  "week": 7,
+  "away": "ohio-state",
+  "home": "miami",
+  "rev": 1
+ },
+ {
+  "id": "lXl-jia2-u0",
+  "title": "28W07TEX@WASH",
+  "published": "2026-07-12T05:06:59+00:00",
+  "season": 2028,
+  "week": 7,
+  "away": "texas",
+  "home": "washington",
+  "rev": 1
+ },
+ {
+  "id": "umN_SezfglU",
+  "title": "28W07ARK@UCLA",
+  "published": "2026-07-12T05:06:41+00:00",
+  "season": 2028,
+  "week": 7,
+  "away": "arkansas",
+  "home": "ucla",
+  "rev": 1
+ },
+ {
+  "id": "Zf40hH12KHc",
+  "title": "28W07ND@MICH",
+  "published": "2026-07-12T05:06:26+00:00",
+  "season": 2028,
+  "week": 7,
+  "away": "notre-dame",
+  "home": "michigan",
+  "rev": 1
+ },
+ {
   "id": "tNzXKs-5a70",
   "title": "28W06MICH@ORE",
   "published": "2026-07-04T07:28:07+00:00",
@@ -87,66 +147,6 @@
   "week": 5,
   "away": "michigan",
   "home": "boston-college",
-  "rev": 1
- },
- {
-  "id": "l-oW99qdz70",
-  "title": "28W05COL@ND",
-  "published": "2026-06-27T06:24:25+00:00",
-  "season": 2028,
-  "week": 5,
-  "away": "colorado",
-  "home": "notre-dame",
-  "rev": 1
- },
- {
-  "id": "CKd7RFB9BiM",
-  "title": "28W05WASH@OSU",
-  "published": "2026-06-27T06:24:08+00:00",
-  "season": 2028,
-  "week": 5,
-  "away": "washington",
-  "home": "ohio-state",
-  "rev": 1
- },
- {
-  "id": "14K10iMIlRc",
-  "title": "28W05USC@UCLA",
-  "published": "2026-06-27T06:23:51+00:00",
-  "season": 2028,
-  "week": 5,
-  "away": "usc",
-  "home": "ucla",
-  "rev": 1
- },
- {
-  "id": "aoS5QcQsJbs",
-  "title": "28W05TEX@ARK",
-  "published": "2026-06-27T06:23:20+00:00",
-  "season": 2028,
-  "week": 5,
-  "away": "texas",
-  "home": "arkansas",
-  "rev": 1
- },
- {
-  "id": "szhN9a2oIfA",
-  "title": "28W04ORE@ND",
-  "published": "2026-06-20T06:44:10+00:00",
-  "season": 2028,
-  "week": 4,
-  "away": "oregon",
-  "home": "notre-dame",
-  "rev": 1
- },
- {
-  "id": "WRfwwDnrFk8",
-  "title": "28W04ARK@TENN",
-  "published": "2026-06-20T05:33:34+00:00",
-  "season": 2028,
-  "week": 4,
-  "away": "arkansas",
-  "home": "tennessee",
   "rev": 1
  }
 ]
