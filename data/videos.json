@@ -1,5 +1,45 @@
 [
  {
+  "id": "40LmVo6ULHo",
+  "title": "28W13LSU@TENN",
+  "published": "2026-08-22T03:13:22+00:00",
+  "season": 2028,
+  "week": 13,
+  "away": "lsu",
+  "home": "tennessee",
+  "rev": 1
+ },
+ {
+  "id": "p_LMsR3-5ic",
+  "title": "28W13BC@ND",
+  "published": "2026-08-22T03:13:07+00:00",
+  "season": 2028,
+  "week": 13,
+  "away": "boston-college",
+  "home": "notre-dame",
+  "rev": 1
+ },
+ {
+  "id": "LkQPrhSERuk",
+  "title": "28W13UCLA@TEX",
+  "published": "2026-08-22T03:12:52+00:00",
+  "season": 2028,
+  "week": 13,
+  "away": "ucla",
+  "home": "texas",
+  "rev": 1
+ },
+ {
+  "id": "awUeoegtG_Y",
+  "title": "28W13OSU@ARK",
+  "published": "2026-08-22T03:12:40+00:00",
+  "season": 2028,
+  "week": 13,
+  "away": "ohio-state",
+  "home": "arkansas",
+  "rev": 1
+ },
+ {
   "id": "Jc1UL_cXgS8",
   "title": "28W12OSU@ARK",
   "published": "2026-08-15T07:26:43+00:00",
@@ -107,46 +147,6 @@
   "week": 11,
   "away": "arkansas",
   "home": "michigan",
-  "rev": 1
- },
- {
-  "id": "itV2L3O1-k8",
-  "title": "28W11WASH@COL",
-  "published": "2026-08-08T04:55:44+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "washington",
-  "home": "colorado",
-  "rev": 1
- },
- {
-  "id": "IUM6B2IIbLQ",
-  "title": "28W11USC@ND",
-  "published": "2026-08-08T04:55:25+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "usc",
-  "home": "notre-dame",
-  "rev": 1
- },
- {
-  "id": "p8y1KC8gb2Q",
-  "title": "28W11UGA@BC",
-  "published": "2026-08-08T04:55:02+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "georgia",
-  "home": "boston-college",
-  "rev": 1
- },
- {
-  "id": "DMQKdw3oy3Y",
-  "title": "28W11UCLA@ORE",
-  "published": "2026-08-08T04:54:45+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "ucla",
-  "home": "oregon",
   "rev": 1
  }
 ]
