@@ -1,5 +1,25 @@
 [
  {
+  "id": "ZCiPXTFcvVM",
+  "title": "28W14ARK@TENN",
+  "published": "2026-08-29T06:24:16+00:00",
+  "season": 2028,
+  "week": 14,
+  "away": "arkansas",
+  "home": "tennessee",
+  "rev": 1
+ },
+ {
+  "id": "kkMK_YR9DaU",
+  "title": "28W14ND@TEX",
+  "published": "2026-08-29T06:23:50+00:00",
+  "season": 2028,
+  "week": 14,
+  "away": "notre-dame",
+  "home": "texas",
+  "rev": 1
+ },
+ {
   "id": "40LmVo6ULHo",
   "title": "28W13LSU@TENN",
   "published": "2026-08-22T03:13:22+00:00",
@@ -127,26 +147,6 @@
   "week": 11,
   "away": "ohio-state",
   "home": "oklahoma",
-  "rev": 1
- },
- {
-  "id": "0dXH-VZ3Km0",
-  "title": "28W11LSU@TENN",
-  "published": "2026-08-08T04:56:23+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "lsu",
-  "home": "tennessee",
-  "rev": 1
- },
- {
-  "id": "tj0JMpa6PQg",
-  "title": "28W11ARK@MICH",
-  "published": "2026-08-08T04:56:02+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "arkansas",
-  "home": "michigan",
   "rev": 1
  }
 ]
