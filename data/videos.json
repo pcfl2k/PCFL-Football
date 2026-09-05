@@ -1,5 +1,15 @@
 [
  {
+  "id": "jev3cGznWXg",
+  "title": "28W15TENN@TEX",
+  "published": "2026-09-05T00:11:06+00:00",
+  "season": 2028,
+  "week": 15,
+  "away": "tennessee",
+  "home": "texas",
+  "rev": 1
+ },
+ {
   "id": "ZCiPXTFcvVM",
   "title": "28W14ARK@TENN",
   "published": "2026-08-29T06:24:16+00:00",
@@ -137,16 +147,6 @@
   "week": 11,
   "away": "texas",
   "home": "clemson",
-  "rev": 1
- },
- {
-  "id": "AocitYaHY_k",
-  "title": "28W11OSU@OKL",
-  "published": "2026-08-08T04:56:53+00:00",
-  "season": 2028,
-  "week": 11,
-  "away": "ohio-state",
-  "home": "oklahoma",
   "rev": 1
  }
 ]

@@ -11,6 +11,29 @@
  </author>
  <published>2024-07-23T00:11:56+00:00</published>
  <entry>
+  <id>yt:video:jev3cGznWXg</id>
+  <yt:videoId>jev3cGznWXg</yt:videoId>
+  <yt:channelId>UCCopjecFoHzlVp99e-3W2yA</yt:channelId>
+  <title>28W15TENN@TEX</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=jev3cGznWXg"/>
+  <author>
+   <name>PCFL Network</name>
+   <uri>https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA</uri>
+  </author>
+  <published>2026-09-05T00:11:06+00:00</published>
+  <updated>2026-09-05T00:26:52+00:00</updated>
+  <media:group>
+   <media:title>28W15TENN@TEX</media:title>
+   <media:content url="https://www.youtube.com/v/jev3cGznWXg?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i3.ytimg.com/vi/jev3cGznWXg/hqdefault.jpg" width="480" height="360"/>
+   <media:description></media:description>
+   <media:community>
+    <media:starRating count="0" average="0.00" min="1" max="5"/>
+    <media:statistics views="4"/>
+   </media:community>
+  </media:group>
+ </entry>
+ <entry>
   <id>yt:video:ZCiPXTFcvVM</id>
   <yt:videoId>ZCiPXTFcvVM</yt:videoId>
   <yt:channelId>UCCopjecFoHzlVp99e-3W2yA</yt:channelId>
@@ -29,7 +52,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="2"/>
+    <media:statistics views="3"/>
    </media:community>
   </media:group>
  </entry>
@@ -44,7 +67,7 @@
    <uri>https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA</uri>
   </author>
   <published>2026-08-29T06:23:50+00:00</published>
-  <updated>2026-08-29T06:27:26+00:00</updated>
+  <updated>2026-08-29T06:29:51+00:00</updated>
   <media:group>
    <media:title>28W14ND@TEX</media:title>
    <media:content url="https://www.youtube.com/v/kkMK_YR9DaU?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
@@ -52,7 +75,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="0"/>
+    <media:statistics views="6"/>
    </media:community>
   </media:group>
  </entry>
@@ -121,7 +144,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="1"/>
+    <media:statistics views="2"/>
    </media:community>
   </media:group>
  </entry>
@@ -167,7 +190,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="4"/>
+    <media:statistics views="9"/>
    </media:community>
   </media:group>
  </entry>
@@ -236,7 +259,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="0"/>
+    <media:statistics views="1"/>
    </media:community>
   </media:group>
  </entry>
@@ -259,7 +282,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="2"/>
+    <media:statistics views="3"/>
    </media:community>
   </media:group>
  </entry>
@@ -305,7 +328,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="1"/>
+    <media:statistics views="3"/>
    </media:community>
   </media:group>
  </entry>
@@ -328,30 +351,7 @@
    <media:description></media:description>
    <media:community>
     <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="0"/>
-   </media:community>
-  </media:group>
- </entry>
- <entry>
-  <id>yt:video:AocitYaHY_k</id>
-  <yt:videoId>AocitYaHY_k</yt:videoId>
-  <yt:channelId>UCCopjecFoHzlVp99e-3W2yA</yt:channelId>
-  <title>28W11OSU@OKL</title>
-  <link rel="alternate" href="https://www.youtube.com/watch?v=AocitYaHY_k"/>
-  <author>
-   <name>PCFL Network</name>
-   <uri>https://www.youtube.com/channel/UCCopjecFoHzlVp99e-3W2yA</uri>
-  </author>
-  <published>2026-08-08T04:56:53+00:00</published>
-  <updated>2026-08-08T04:56:54+00:00</updated>
-  <media:group>
-   <media:title>28W11OSU@OKL</media:title>
-   <media:content url="https://www.youtube.com/v/AocitYaHY_k?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
-   <media:thumbnail url="https://i2.ytimg.com/vi/AocitYaHY_k/hqdefault.jpg" width="480" height="360"/>
-   <media:description></media:description>
-   <media:community>
-    <media:starRating count="0" average="0.00" min="1" max="5"/>
-    <media:statistics views="0"/>
+    <media:statistics views="1"/>
    </media:community>
   </media:group>
  </entry>
