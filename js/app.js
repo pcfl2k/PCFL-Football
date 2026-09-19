@@ -1905,6 +1905,22 @@ async function route(){
   window.scrollTo({ top: 0 });
 }
 
+
+/* ---------------------------- recruiting ---------------------------- */
+/* The Recruitment Center is a separately-hosted service with its own UI
+   module (js/recruiting.js). It is loaded lazily so nothing about it can
+   affect the rest of the site: if the module or the service is unavailable,
+   the route shows a graceful offline card and every other page is untouched. */
+VIEWS.recruiting = async function(sub, id, _, q){
+  try {
+    const mod = await import(new URL('js/recruiting.js', document.baseURI).href);
+    return mod.render({ App, T, logo, esc, haptic, sub, id, q, base: document.baseURI });
+  } catch (e) {
+    console.error('recruiting module failed to load', e);
+    return `<div class="empty card" style="margin-top:30px"><b>Recruitment Center unavailable</b>The recruiting module could not be loaded. ${esc(e.message)}</div>`;
+  }
+};
+
 /* ============================= boot ============================== */
 async function boot(){
   // staging environment indicator
