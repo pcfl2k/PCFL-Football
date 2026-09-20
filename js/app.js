@@ -347,6 +347,24 @@ function trophySVG(c, season){
     <path d="M160 96l7 14 15 2-11 11 3 15-14-8-14 8 3-15-11-11 15-2z" fill="#fff8d6" opacity=".9"/>
   </svg>`;
 }
+/* Real championship trophy photo with a PCFL engraved plate laid over the base
+   (positions are percentages of the image so the plate stays aligned at any size). */
+function trophyHTML(c, season){
+  const C = T(c.champ), R = T(c.runner);
+  const cs = c.g.away.team === c.champ ? c.g.away.score : c.g.home.score, rs = c.g.away.team === c.champ ? c.g.home.score : c.g.away.score;
+  return `<div class="trophy-real" role="img" aria-label="${esc(String(season))} PCFL National Championship trophy engraved for ${esc(C.name)}">
+    <div class="trophy-glow"></div>
+    <img src="assets/brand/trophy.png" alt="">
+    <div class="trophy-plate" style="--c1:${C.colors.primary}">
+      <img class="tp-logo" src="${logo(c.champ, true)}" onerror="this.src='${logo(c.champ)}'" alt="">
+      <div class="tp-k">PCFL National Champions</div>
+      <div class="tp-team">${esc(C.name)} ${esc(C.nickname || '')}</div>
+      <div class="tp-year">${esc(String(season))}</div>
+      <div class="tp-score">${cs} – ${rs} over ${esc(R.name)}</div>
+      <div class="tp-mvp">MVP · ${esc(c.mvp.name)}</div>
+    </div>
+  </div>`;
+}
 function championshipHTML(wk, c){
   const C = T(c.champ), R = T(c.runner), g = c.g;
   const cs = g.away.team === c.champ ? g.away.score : g.home.score, rs = g.away.team === c.champ ? g.home.score : g.away.score;
@@ -358,7 +376,7 @@ function championshipHTML(wk, c){
       <div class="champ-confetti">${Array.from({ length: 18 }, (_, i) => `<i style="--i:${i};--x:${(i * 53) % 100}%;--d:${6 + (i % 5)}s;--w:${6 + (i % 3) * 3}px"></i>`).join('')}</div>
       <div class="champ-chyron"><span class="dot"></span> PCFL Network · ${wk.season} ${esc(c.label)} · Official</div>
       <div class="champ-grid">
-        <div class="champ-trophy">${trophySVG(c, wk.season)}</div>
+        <div class="champ-trophy">${trophyHTML(c, wk.season)}</div>
         <div class="champ-main">
           <div class="champ-k">${wk.season} PCFL National Champions</div>
           <h1 class="champ-name"><img src="${logo(c.champ, true)}" onerror="this.src='${logo(c.champ)}'" alt="">${esc(C.name)} <span>${esc(C.nickname)}</span></h1>
