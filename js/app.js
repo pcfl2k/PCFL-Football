@@ -259,9 +259,173 @@ function powerPollRows(wk, limit){
 const VIEWS = {};
 
 /* ------------------------------ home ----------------------------- */
+/* ----------------------- championship celebration ----------------------- */
+/* When the week being viewed is the title game (single game after the regular
+   season), the home page leads with a full championship presentation:
+   trophy with engraving, official announcement, game MVP, season performers
+   and the champion's game-by-game road with commentary. Falls back silently
+   to the normal Game of the Week if anything is missing. */
+async function championshipData(wk){
+  let p = null; try { p = await getJSON(`data/${wk.season}/playoffs.json`); } catch { p = null; }
+  const regular = p?.regularWeeks || 12;
+  if (!(wk.games.length === 1 && wk.week > regular)) return null;
+  const g = wk.games[0];
+  if (g.away.score === g.home.score) return null;
+  const champ = g.away.score > g.home.score ? g.away.team : g.home.team;
+  const runner = champ === g.away.team ? g.home.team : g.away.team;
+  const weeks = await Promise.all(Array.from({ length: wk.week }, (_, i) => (i + 1 === wk.week) ? wk : getJSON(`data/${wk.season}/week${i + 1}.json`).catch(() => null)));
+  const labelFor = w => w <= regular ? `Week ${w}` : w === regular + 1 ? 'Wild Card' : w === regular + 2 ? 'Conference Championship' : 'PCFL Championship';
+  const road = [];
+  for (const w of weeks){
+    if (!w) continue;
+    const gm = w.games.find(x => x.away.team === champ || x.home.team === champ);
+    if (!gm){ road.push({ week: w.week, bye: true, label: labelFor(w.week) }); continue; }
+    const me = gm.away.team === champ ? gm.away : gm.home, op = gm.away.team === champ ? gm.home : gm.away;
+    road.push({ week: w.week, id: gm.id, home: gm.home.team === champ, opp: op.team, my: me.score, their: op.score, win: me.score > op.score,
+      story: gm.story, pog: gm.playerOfGame, pogLine: gm.playerOfGameLine, video: gm.videoId, playoff: w.week > regular, label: labelFor(w.week) });
+  }
+  const played = road.filter(r => !r.bye);
+  let roster = []; try { const all = await getJSON(`data/${wk.season}/rosters.json`); roster = Array.isArray(all[champ]) ? all[champ] : (all[champ]?.players || []); } catch {}
+  const fullName = last => roster.find(pl => pl.name.split(' ').pop().toLowerCase() === String(last).toLowerCase())?.name || last;
+  const mvp = championshipMVP(g, champ, fullName);
+  let pow = []; try { pow = await getJSON(`data/${wk.season}/pow-history.json`); } catch {}
+  const leadersFor = key => (wk.leaders?.[key] || []).filter(x => x.team === champ)[0];
+  const margins = played.map(r => r.my - r.their);
+  const biggest = played.reduce((a, r) => (!a || (r.my - r.their) > (a.my - a.their)) ? r : a, null);
+  const closest = played.filter(r => r.win).reduce((a, r) => (!a || (r.my - r.their) < (a.my - a.their)) ? r : a, null);
+  const loss = played.find(r => !r.win);
+  const avenged = loss && loss.opp === runner;
+  return { g, champ, runner, road, played, wins: played.filter(r => r.win).length, losses: played.filter(r => !r.win).length,
+    pf: played.reduce((s, r) => s + r.my, 0), pa: played.reduce((s, r) => s + r.their, 0), avgMargin: margins.length ? (margins.reduce((a, b) => a + b, 0) / margins.length) : 0,
+    biggest, closest, loss, avenged, mvp, pow: pow.filter(x => x.team === champ),
+    leaders: { passing: leadersFor('passing'), rushing: leadersFor('rushing'), receiving: leadersFor('receiving'), sacks: leadersFor('sacks'), tackles: leadersFor('tackles'), interceptions: leadersFor('interceptions') },
+    label: labelFor(wk.week), regular };
+}
+function championshipMVP(g, champ, fullName){
+  if (g.playerOfGame && g.playerOfGame.team === champ) return { name: g.playerOfGame.name, pos: g.playerOfGame.pos, line: g.playerOfGameLine || '' };
+  const side = g.away.team === champ ? 'away' : 'home';
+  const score = {};
+  const add = (name, pts, line, pos) => { const s = score[name] ||= { pts: 0, lines: [], pos }; s.pts += pts; s.lines.push(line); };
+  for (const sec of g.box[side]){
+    for (const r of sec.rows){
+      if (r.total) continue; const v = r.vals.map(Number);
+      if (sec.section === 'Passing')   add(r.name, v[2] * 0.55 + v[5] * 35 - (v[6] || 0) * 20, `${v[1]}/${v[0]}, ${v[2]} yds, ${v[5]} TD`, 'QB');
+      if (sec.section === 'Rushing')   add(r.name, v[1] * 1.2 + v[4] * 35, `${v[0]} car, ${v[1]} yds, ${v[4]} TD`, 'HB');
+      if (sec.section === 'Receiving') add(r.name, v[1] * 1.1 + v[4] * 35, `${v[0]} rec, ${v[1]} yds, ${v[4]} TD`, 'WR');
+      if (sec.section === 'Defense')   add(r.name, v[0] * 4 + v[1] * 30, `${v[0]} tkl, ${v[1]} sacks`, 'DEF');
+    }
+  }
+  const best = Object.entries(score).sort((a, b) => b[1].pts - a[1].pts)[0];
+  if (!best) return { name: '—', line: '' };
+  return { name: fullName(best[0]), pos: best[1].pos, line: best[1].lines.join(' · ') };
+}
+function trophySVG(c, season){
+  const C = T(c.champ), mvpShort = (c.mvp.name || '').toUpperCase();
+  return `<svg class="trophy-svg" viewBox="0 0 320 420" role="img" aria-label="${esc(season)} PCFL Championship trophy engraved for ${esc(C.name)}">
+    <defs>
+      <linearGradient id="tg-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2b0"/><stop offset=".35" stop-color="#f1be48"/><stop offset=".65" stop-color="#b8860b"/><stop offset="1" stop-color="#fbe58a"/></linearGradient>
+      <linearGradient id="tg-dark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2a05"/><stop offset="1" stop-color="#15181d"/></linearGradient>
+      <linearGradient id="tg-plate" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2a2e36"/><stop offset=".5" stop-color="#3b414c"/><stop offset="1" stop-color="#2a2e36"/></linearGradient>
+      <radialGradient id="tg-glow" cx=".5" cy=".3" r=".7"><stop offset="0" stop-color="#f1be48" stop-opacity=".55"/><stop offset="1" stop-color="#f1be48" stop-opacity="0"/></radialGradient>
+    </defs>
+    <ellipse cx="160" cy="150" rx="150" ry="140" fill="url(#tg-glow)"/>
+    <path d="M70 40h180v20c0 70-30 120-90 138C100 180 70 130 70 60z" fill="url(#tg-gold)" stroke="#8a6508" stroke-width="2"/>
+    <path d="M70 60c-40 0-55 25-45 55s35 45 65 45" fill="none" stroke="url(#tg-gold)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M250 60c40 0 55 25 45 55s-35 45-65 45" fill="none" stroke="url(#tg-gold)" stroke-width="12" stroke-linecap="round"/>
+    <rect x="62" y="34" width="196" height="14" rx="6" fill="url(#tg-gold)" stroke="#8a6508" stroke-width="1.5"/>
+    <path d="M100 56c10 40 20 70 60 92" stroke="#fff8d6" stroke-opacity=".55" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <rect x="145" y="198" width="30" height="46" rx="6" fill="url(#tg-gold)" stroke="#8a6508" stroke-width="1.5"/>
+    <ellipse cx="160" cy="250" rx="52" ry="12" fill="url(#tg-gold)" stroke="#8a6508" stroke-width="1.5"/>
+    <rect x="70" y="258" width="180" height="26" rx="6" fill="url(#tg-gold)" stroke="#8a6508" stroke-width="1.5"/>
+    <rect x="40" y="284" width="240" height="118" rx="10" fill="url(#tg-plate)" stroke="#111" stroke-width="2"/>
+    <rect x="52" y="296" width="216" height="94" rx="6" fill="none" stroke="url(#tg-gold)" stroke-width="1.5" opacity=".8"/>
+    <rect x="52" y="296" width="216" height="8" fill="${esc(C.colors.primary)}" opacity=".9"/>
+    <text x="160" y="322" text-anchor="middle" font-family="Oswald, Arial Narrow, sans-serif" font-size="12.5" letter-spacing="3" fill="#f1be48">PCFL NATIONAL CHAMPIONS</text>
+    <text x="160" y="345" text-anchor="middle" font-family="Bebas Neue, Oswald, sans-serif" font-size="24" letter-spacing="2" fill="#fff6d5">${esc(season)} · ${esc(C.name.toUpperCase())} ${esc((C.nickname || '').toUpperCase())}</text>
+    <text x="160" y="364" text-anchor="middle" font-family="Oswald, Arial Narrow, sans-serif" font-size="11.5" letter-spacing="2.5" fill="#cfd4db">${esc(String(c.g.away.team === c.champ ? c.g.away.score : c.g.home.score))} – ${esc(String(c.g.away.team === c.champ ? c.g.home.score : c.g.away.score))} OVER ${esc(T(c.runner).name.toUpperCase())}</text>
+    <text x="160" y="381" text-anchor="middle" font-family="Oswald, Arial Narrow, sans-serif" font-size="10.5" letter-spacing="2.5" fill="#f1be48">MVP · ${esc(mvpShort)}</text>
+    <path d="M160 96l7 14 15 2-11 11 3 15-14-8-14 8 3-15-11-11 15-2z" fill="#fff8d6" opacity=".9"/>
+  </svg>`;
+}
+function championshipHTML(wk, c){
+  const C = T(c.champ), R = T(c.runner), g = c.g;
+  const cs = g.away.team === c.champ ? g.away.score : g.home.score, rs = g.away.team === c.champ ? g.home.score : g.away.score;
+  const streak = (() => { let n = 0; for (let i = c.played.length - 1; i >= 0 && c.played[i].win; i--) n++; return n; })();
+  const stat = (v, l) => `<div class="champ-stat"><b data-count="${Number.isFinite(+v) ? v : 0}">${Number.isFinite(+v) ? 0 : esc(String(v))}</b><span>${l}</span></div>`;
+  const hero = `
+    <section class="champ reveal" style="--c1:${C.colors.primary};--c2:${C.colors.secondary || '#f1be48'}">
+      <div class="champ-bg"></div><div class="champ-rays"></div>
+      <div class="champ-confetti">${Array.from({ length: 18 }, (_, i) => `<i style="--i:${i};--x:${(i * 53) % 100}%;--d:${6 + (i % 5)}s;--w:${6 + (i % 3) * 3}px"></i>`).join('')}</div>
+      <div class="champ-chyron"><span class="dot"></span> PCFL Network · ${wk.season} ${esc(c.label)} · Official</div>
+      <div class="champ-grid">
+        <div class="champ-trophy">${trophySVG(c, wk.season)}</div>
+        <div class="champ-main">
+          <div class="champ-k">${wk.season} PCFL National Champions</div>
+          <h1 class="champ-name"><img src="${logo(c.champ, true)}" onerror="this.src='${logo(c.champ)}'" alt="">${esc(C.name)} <span>${esc(C.nickname)}</span></h1>
+          <div class="champ-score">
+            <a class="t" href="#/teams/${c.champ}"><img src="${logo(c.champ, true)}" onerror="this.src='${logo(c.champ)}'" alt=""><b>${esc(C.abbr)}</b></a>
+            <span class="s" data-count="${cs}">0</span><span class="dash">–</span><span class="s dim" data-count="${rs}">0</span>
+            <a class="t r" href="#/teams/${c.runner}"><img src="${logo(c.runner, true)}" onerror="this.src='${logo(c.runner)}'" alt=""><b>${esc(R.abbr)}</b></a>
+          </div>
+          <div class="champ-sub">${esc(g.story?.headline || `${C.name} wins the ${wk.season} PCFL Championship`)}${c.avenged ? ` · avenged the season's only loss` : ''}</div>
+          <div class="champ-stats">${stat(c.wins, 'Wins')}${stat(c.losses, 'Losses')}${stat(c.pf, 'Points for')}${stat(c.pa, 'Points against')}${stat(streak, 'Win streak')}${stat(c.pow.length ? c.pow.reduce((s, p) => s + p.weeks.length, 0) : 0, 'POW awards')}</div>
+          <div class="champ-actions">
+            ${g.videoId ? `<a class="btn primary" href="#/game/${wk.season}/${wk.week}/${g.id}?t=video">▶ Watch the Championship</a>` : ''}
+            <a class="btn" href="#/game/${wk.season}/${wk.week}/${g.id}?t=recap">Game Recap</a>
+            <a class="btn" href="#/game/${wk.season}/${wk.week}/${g.id}">Box Score</a>
+            ${g.logFile ? `<a class="btn" href="data/${wk.season}/logs/week${wk.week}/${esc(g.logFile)}" download>Game Log</a>` : ''}
+          </div>
+        </div>
+      </div>
+    </section>`;
+  const L = c.leaders;
+  const leaderRow = (label, p, line) => p ? `<div class="champ-lrow"><span class="lbl">${label}</span><b>${esc(p.name)}</b><span class="ln">${line}</span></div>` : '';
+  const perf = `
+    <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Championship MVP &amp; Season Performers</h2><span class="sub">${esc(C.name)} · ${wk.season} season</span></div>
+    <div class="champ-perf">
+      <div class="card reveal champ-mvp" style="--c1:${C.colors.primary}">
+        <div class="mvp-k">${esc(c.label)} MVP</div>
+        <div class="mvp-name">${esc(c.mvp.name)}</div>
+        <div class="mvp-line">${c.mvp.pos ? esc(c.mvp.pos) + ' · ' : ''}${esc(c.mvp.line || '')}</div>
+        <img src="${logo(c.champ)}" alt="">
+      </div>
+      <div class="card reveal champ-leaders"><div class="hd"><h3>Season leaders · ${esc(C.abbr)}</h3><a href="#/teams/${c.champ}">Team page</a></div>
+        ${leaderRow('Passing', L.passing, L.passing ? `${L.passing.yds.toLocaleString()} yds · ${L.passing.td} TD · ${L.passing.int} INT · ${L.passing.rtg} rtg` : '')}
+        ${leaderRow('Rushing', L.rushing, L.rushing ? `${L.rushing.yds.toLocaleString()} yds · ${L.rushing.td} TD · ${L.rushing.avg} avg` : '')}
+        ${leaderRow('Receiving', L.receiving, L.receiving ? `${L.receiving.rec} rec · ${L.receiving.yds.toLocaleString()} yds · ${L.receiving.td} TD` : '')}
+        ${leaderRow('Sacks', L.sacks, L.sacks ? `${L.sacks.sacks} sacks` : '')}
+        ${leaderRow('Tackles', L.tackles, L.tackles ? `${L.tackles.tackles} tackles` : '')}
+        ${leaderRow('Interceptions', L.interceptions, L.interceptions ? `${L.interceptions.int} INT · ${L.interceptions.yds} ret yds` : '')}
+        ${c.pow.length ? `<div class="champ-lrow"><span class="lbl">Players of the Week</span><b>${c.pow.map(p => `${esc(p.name)} <span class="ln">×${p.weeks.length}</span>`).join(', ')}</b></div>` : ''}
+      </div>
+      <div class="card reveal champ-super"><div class="hd"><h3>Season superlatives</h3><a href="#/history">History</a></div>
+        ${c.biggest ? `<div class="champ-lrow"><span class="lbl">Biggest win</span><b>${c.biggest.my}–${c.biggest.their} ${c.biggest.home ? 'vs' : 'at'} ${esc(T(c.biggest.opp).name)}</b><span class="ln">${esc(c.biggest.label)}</span></div>` : ''}
+        ${c.closest ? `<div class="champ-lrow"><span class="lbl">Closest call</span><b>${c.closest.my}–${c.closest.their} ${c.closest.home ? 'vs' : 'at'} ${esc(T(c.closest.opp).name)}</b><span class="ln">${esc(c.closest.label)}</span></div>` : ''}
+        ${c.loss ? `<div class="champ-lrow"><span class="lbl">Only loss</span><b>${c.loss.my}–${c.loss.their} ${c.loss.home ? 'vs' : 'at'} ${esc(T(c.loss.opp).name)}</b><span class="ln">${esc(c.loss.label)}${c.avenged ? ' · avenged in the final' : ''}</span></div>` : `<div class="champ-lrow"><span class="lbl">Record</span><b>Undefeated season</b></div>`}
+        <div class="champ-lrow"><span class="lbl">Avg margin</span><b>${c.avgMargin >= 0 ? '+' : ''}${c.avgMargin.toFixed(1)} per game</b><span class="ln">${c.pf} scored · ${c.pa} allowed</span></div>
+        <div class="champ-lrow"><span class="lbl">Playoff run</span><b>${c.played.filter(r => r.playoff).map(r => `${r.win ? 'W' : 'L'} ${r.my}–${r.their} ${esc(T(r.opp).abbr)}`).join(' · ')}</b></div>
+      </div>
+    </div>`;
+  const road = `
+    <div class="section-h" style="margin-top:28px"><span class="bar"></span><h2>Road to the Championship</h2><span class="sub">${c.played.length} games · every matchup with commentary</span><a class="more" href="#/schedule">Full schedule →</a></div>
+    <div class="card reveal champ-road">
+      ${c.road.map(r => r.bye ? `<div class="road-row bye"><div class="road-wk">${esc(r.label)}</div><div class="road-body"><span class="road-byelbl">Bye week</span></div></div>` : `
+      <a class="road-row ${r.win ? 'w' : 'l'} ${r.playoff ? 'po' : ''}" href="#/game/${wk.season}/${r.week}/${r.id}?t=recap">
+        <div class="road-wk">${esc(r.label)}${r.playoff ? '<i>Playoffs</i>' : ''}</div>
+        <div class="road-res"><span class="wl">${r.win ? 'W' : 'L'}</span><span class="sc">${r.my}–${r.their}</span></div>
+        <div class="road-opp"><img src="${logo(r.opp)}" alt=""><div><b>${r.home ? 'vs' : 'at'} ${esc(T(r.opp).name)}</b><span>${esc(T(r.opp).nickname)}</span></div></div>
+        <div class="road-body"><h4>${esc(r.story?.headline || '')}</h4><p>${esc((r.story?.body || [])[0] || '')}</p>
+          <div class="road-meta">${r.pog ? `<span>★ ${esc(r.pog.name)}${r.pogLine ? ` — ${esc(r.pogLine)}` : ''}</span>` : ''}${r.video ? '<span style="color:var(--red)">▶ Replay</span>' : ''}</div></div>
+      </a>`).join('')}
+    </div>`;
+  return { hero, sections: perf + road };
+}
+
 VIEWS.home = async function(){
   const wk = await weekData();
   const ranks = ranksOf(wk);
+  let champ = null;
+  try { const c = await championshipData(wk); if (c) champ = championshipHTML(wk, c); } catch (e) { console.warn('championship presentation skipped', e); }
 
   // hero: best matchup by combined power rank, then total points
   const hero = [...wk.games].sort((a,b)=>{
@@ -384,7 +548,8 @@ VIEWS.home = async function(){
   })();
 
   return `
-    ${heroHTML}
+    ${champ ? champ.hero : heroHTML}
+    ${champ ? champ.sections : ''}
     ${potwCard(wk)}
     ${wrapHTML}
     <div class="home-grid">
