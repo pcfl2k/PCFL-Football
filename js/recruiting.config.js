@@ -5,6 +5,6 @@
 window.PCFL_RECRUITING = {
   apiBase: (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
     ? 'http://localhost:8787/api/recruiting/v1'
-    : 'https://REPLACE-WITH-YOUR-HOST/api/recruiting/v1',
+    : 'https://gziar743eun6mwqbrwxjinxc.153.75.235.217.sslip.io/api/recruiting/v1',
   logoBase: 'assets/logos/'
 };
