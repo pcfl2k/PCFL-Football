@@ -4,7 +4,14 @@
    standalone Recruitment Center service (js/recruiting.config.js →
    apiBase). Nothing here is imported by the rest of the site.
    ================================================================== */
-const CFG = window.PCFL_RECRUITING || { apiBase: 'http://localhost:8787/api/recruiting/v1' };
+const HOSTED_API = 'https://gziar743eun6mwqbrwxjinxc.153.75.235.217.sslip.io/api/recruiting/v1';
+const CFG = (() => {
+  const c = window.PCFL_RECRUITING || {};
+  const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  // A stale cached config (placeholder host) must never break the page: prefer the hosted service.
+  const apiBase = c.apiBase && !/REPLACE-WITH/i.test(c.apiBase) ? c.apiBase : (local ? 'http://localhost:8787/api/recruiting/v1' : HOSTED_API);
+  return { ...c, apiBase };
+})();
 const ATTRS = ['SP', 'AC', 'AG', 'ST', 'HA', 'EN', 'IN', 'DI'];
 const ATTR_NAMES = { SP: 'Speed', AC: 'Acceleration', AG: 'Agility', ST: 'Strength', HA: 'Hands', EN: 'Endurance', IN: 'Intelligence', DI: 'Discipline' };
 const POS_ORDER = ['QB', 'HB', 'FB', 'WR', 'TE', 'C', 'G', 'T', 'DE', 'DT', 'LB', 'CB', 'S', 'FS', 'SS', 'K', 'P'];

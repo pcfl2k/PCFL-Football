@@ -2096,7 +2096,7 @@ async function route(){
    the route shows a graceful offline card and every other page is untouched. */
 VIEWS.recruiting = async function(sub, id, _, q){
   try {
-    const mod = await import(new URL('js/recruiting.js', document.baseURI).href);
+    const mod = await import(new URL('js/recruiting.js?v=20260927a', document.baseURI).href);
     return mod.render({ App, T, logo, esc, haptic, sub, id, q, base: document.baseURI });
   } catch (e) {
     console.error('recruiting module failed to load', e);
