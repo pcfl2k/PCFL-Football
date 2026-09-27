@@ -1149,3 +1149,37 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
 .trophy-plate .tp-mvp { font-family: var(--font-head); font-size: 5.4cqw; letter-spacing: .14em; text-transform: uppercase; color: #f1be48; margin-top: 1%; }
 @media (max-width: 760px){ .champ-grid { grid-template-columns: 1fr; } .trophy-real { max-width: 240px; } }
 @media (prefers-reduced-motion: reduce){ .trophy-real { animation: none !important; } }
+
+/* ---------------------------------------------------------------- */
+/* Offseason — Recruiting Period home                                */
+/* ---------------------------------------------------------------- */
+.offseason-note { display: flex; align-items: center; gap: 10px; margin: 18px 0 -6px; padding: 9px 14px; border-radius: 8px; background: var(--ink-2); color: #cfd4db; font-size: 12px; letter-spacing: .04em; }
+.offseason-note .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); animation: pulse 1.6s infinite; }
+.offseason-note a { margin-left: auto; color: var(--gold); font-weight: 600; }
+.rp-hero { position: relative; border-radius: 16px; overflow: hidden; margin-top: 22px; min-height: 440px; color: #fff; box-shadow: var(--shadow-2); isolation: isolate; background: linear-gradient(120deg, #0b0d12 30%, #15181d 70%); display: flex; align-items: flex-end; }
+.rp-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; z-index: -3; filter: saturate(.9) contrast(1.05); }
+.rp-shade { position: absolute; inset: 0; z-index: -2; background: linear-gradient(90deg, rgba(8,10,14,.92) 0%, rgba(8,10,14,.72) 45%, rgba(8,10,14,.25) 100%), linear-gradient(180deg, rgba(8,10,14,.1) 0%, rgba(8,10,14,.75) 100%); }
+.rp-grid-lines { position: absolute; inset: 0; z-index: -1; opacity: .10; background-image: repeating-linear-gradient(90deg, transparent 0 119px, rgba(255,255,255,.5) 119px 120px); mask-image: linear-gradient(180deg, transparent, #000 40%, #000 70%, transparent); }
+.rp-chyron { position: absolute; top: 22px; left: 26px; display: inline-flex; align-items: center; gap: 10px; background: var(--gold); color: var(--ink); padding: 6px 16px; font-family: var(--font-head); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; font-weight: 600; clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
+.rp-chyron .dot { width: 7px; height: 7px; background: var(--red); border-radius: 50%; animation: pulse 1.6s infinite; }
+.rp-inner { position: relative; padding: 80px 34px 32px; max-width: 720px; }
+.rp-k { font-family: var(--font-head); color: var(--gold); font-size: 13px; letter-spacing: .34em; text-transform: uppercase; margin-bottom: 8px; }
+.rp-title { margin: 0; font-family: var(--font-display); font-size: clamp(52px, 7vw, 96px); line-height: .88; letter-spacing: .02em; text-shadow: 0 10px 40px rgba(0,0,0,.6); }
+.rp-title span { color: var(--gold); }
+.rp-lead { margin: 16px 0 14px; font-size: 14.5px; line-height: 1.6; color: rgba(255,255,255,.82); max-width: 560px; }
+.rp-status { display: inline-flex; align-items: center; gap: 10px; padding: 7px 14px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); font-family: var(--font-head); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.rp-status .rp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-2); }
+.rp-status.live .rp-dot { background: #ff3b52; animation: pulse 1.6s infinite; }
+.rp-stats { display: flex; gap: 22px; flex-wrap: wrap; margin: 18px 0 18px; }
+.rp-stat b { display: block; font-family: var(--font-display); font-size: 34px; line-height: 1; color: var(--gold); font-variant-numeric: tabular-nums; }
+.rp-stat span { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+.rp-rank { font-family: var(--font-display); font-size: 22px; color: var(--muted); width: 30px; text-align: center; flex-shrink: 0; }
+.rp-champ { display: grid; grid-template-columns: 74px 1fr; gap: 14px; align-items: center; padding: 16px 18px; background: linear-gradient(135deg, var(--c1), #0d0f13 130%); color: #fff; position: relative; overflow: hidden; }
+.rp-champ .rp-trophy { width: 74px; height: auto; filter: drop-shadow(0 10px 18px rgba(0,0,0,.6)); }
+.rp-champ .cat { font-family: var(--font-head); font-size: 10px; letter-spacing: .24em; text-transform: uppercase; color: var(--gold); }
+.rp-champ h3 { margin: 4px 0 4px; font-family: var(--font-display); font-size: 26px; line-height: 1; }
+.rp-champ p { margin: 0 0 6px; font-size: 12px; color: rgba(255,255,255,.8); }
+.rp-champ .more { font-family: var(--font-head); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+.rp-champ .rp-champ-logo { position: absolute; right: -14px; bottom: -18px; width: 110px; height: 110px; opacity: .16; }
+@media (max-width: 760px){ .rp-hero { min-height: 420px; } .rp-inner { padding: 74px 20px 24px; } .rp-title { font-size: 56px; } .rp-stats { gap: 14px; } }
+@media (prefers-reduced-motion: reduce){ .rp-status .rp-dot, .rp-chyron .dot, .offseason-note .dot { animation: none !important; } }
