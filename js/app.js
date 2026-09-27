@@ -7,6 +7,11 @@
 const App = {
   manifest: null, teams: [], teamMap: {}, videos: [],
   season: null, week: null,
+  // Offseason "Recruiting Period": a virtual season entry (latest played season + 1) that
+  // exists in the selector before any week of the new season has been played. While it is
+  // selected, App.season stays on the last played season (its data backs every page) and
+  // App.week === 'recruiting'; App.uiSeason is what the selector shows.
+  uiSeason: null, recruiting: null,
   cache: {}, schedule: null, rosters: null,
 };
 
@@ -24,7 +29,12 @@ async function getJSON(path){
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return (App.cache[path] = await r.json());
 }
-const weekData = (s = App.season, w = App.week) => getJSON(`data/${s}/week${w}.json`);
+const weekData = (s = App.season, w = App.week) => {
+  if (w === 'recruiting') { const last = App.manifest.seasons.find(x => x.year === App.season) || App.manifest.seasons[App.manifest.seasons.length - 1]; return getJSON(`data/${last.year}/week${last.latest}.json`); }
+  return getJSON(`data/${s}/week${w}.json`);
+};
+const isRecruitingView = () => App.week === 'recruiting';
+window.setSeasonWeek = (y, w) => { App.uiSeason = y; App.season = y; App.week = w; renderChrome(); renderTicker(); if (location.hash === '#/' || location.hash === '') route(); else location.hash = '#/'; };
 
 function ranksOf(wk){
   const m = {};
@@ -60,11 +70,15 @@ function countUp(elm, target, ms = 900){
 
 /* ----------------------------- header ---------------------------- */
 function renderChrome(){
-  const seasonOpts = App.manifest.seasons.map(s =>
-    `<option value="${s.year}" ${s.year===App.season?'selected':''}>${s.year}</option>`).join('');
+  const ui = App.uiSeason ?? App.season;
+  const seasons = App.manifest.seasons.map(s => ({ year: s.year }));
+  if (App.recruiting && !seasons.some(s => s.year === App.recruiting.year)) seasons.push({ year: App.recruiting.year, virtual: true });
+  const seasonOpts = seasons.map(s =>
+    `<option value="${s.year}" ${s.year===ui?'selected':''}>${s.year}${s.virtual ? ' · Recruiting' : ''}</option>`).join('');
   const season = App.manifest.seasons.find(s => s.year === App.season);
-  const weekOpts = season.weeks.map(w =>
-    `<option value="${w}" ${w===App.week?'selected':''}>Week ${w}</option>`).join('');
+  const weekOpts = (App.recruiting && ui === App.recruiting.year)
+    ? `<option value="recruiting" selected>Recruiting Period</option>`
+    : season.weeks.map(w => `<option value="${w}" ${w===App.week?'selected':''}>Week ${w}</option>`).join('');
   document.querySelectorAll('select.season-sel').forEach(s => s.innerHTML = seasonOpts);
   document.querySelectorAll('select.week-sel').forEach(s => s.innerHTML = weekOpts);
 }
@@ -439,8 +453,69 @@ function championshipHTML(wk, c){
   return { hero, sections: perf + road };
 }
 
+/* ----------------------- offseason: recruiting period home ---------------------- */
+async function recruitingHomeHTML(wk){
+  const R = App.recruiting, cfg = window.PCFL_RECRUITING || {};
+  let st = R.service, feed = [], recruits = [], offline = !cfg.apiBase;
+  try {
+    const sig = AbortSignal.timeout(5000);
+    if (!st) st = await (await fetch(cfg.apiBase + '/state', { signal: sig })).json();
+    const f = await (await fetch(cfg.apiBase + '/feed?limit=8', { signal: sig })).json(); feed = f.feed || [];
+    const rc = await (await fetch(cfg.apiBase + '/recruits', { signal: sig })).json(); recruits = rc.recruits || [];
+  } catch { offline = !st; }
+  const cr = st?.currentRound, season = st?.season;
+  const open = recruits.filter(r => r.status === 'OPEN'), signed = recruits.filter(r => r.status === 'SIGNED').sort((a, b) => Date.parse(b.signedAt) - Date.parse(a.signedAt));
+  const pool = recruits.filter(r => r.status === 'POOL').length;
+  const nextClose = open.map(r => r.closesAt).sort()[0];
+  const rel = iso => { const ms = Date.parse(iso) - Date.now(); if (ms <= 0) return 'now'; const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}h ${m}m` : `${m}m`; };
+  const phase = offline ? 'Recruitment Center offline' : !season ? 'Recruiting season not opened yet' : cr?.status === 'ACTIVE' ? `${cr.name} · live` : cr?.status === 'PAUSED' ? `${cr.name} · paused` : season.status === 'RECRUITING_COMPLETE' ? 'Recruiting complete' : `${cr ? cr.name : 'Round 1'} · opens when the commissioner starts it`;
+  const stat = (v, l) => `<div class="rp-stat"><b>${esc(String(v))}</b><span>${l}</span></div>`;
+  let champ = null; try { champ = await championshipData(wk); } catch {}
+  const C = champ ? T(champ.champ) : null;
+  const hero = `
+    <section class="rp-hero reveal">
+      <img class="rp-photo" src="assets/brand/recruiting-banner.jpg" alt="" onerror="this.remove()">
+      <div class="rp-shade"></div><div class="rp-grid-lines"></div>
+      <div class="rp-chyron"><span class="dot"></span> PCFL Network · ${R.year} Recruiting Period · Official</div>
+      <div class="rp-inner">
+        <div class="rp-k">${R.year} PCFL Recruiting Period</div>
+        <h1 class="rp-title">Recruiting<br><span>Period</span></h1>
+        <p class="rp-lead">The ${App.season} season is in the books. Programs are rebuilding their rosters through the Recruitment Center — 24-hour winning-bid windows, round by round, until every recruit has signed.</p>
+        <div class="rp-status ${cr?.status === 'ACTIVE' ? 'live' : ''}"><span class="rp-dot"></span>${esc(phase)}${nextClose ? ` · next signing in ${rel(nextClose)}` : ''}</div>
+        <div class="rp-stats">${stat(season ? recruits.length : '—', 'Recruits on board')}${stat(open.length, 'Open now')}${stat(signed.length, 'Signed')}${pool ? stat(pool, 'Portal pool') : ''}${stat(st?.teams?.length ?? App.teams.length, 'Programs recruiting')}</div>
+        <div class="hero-actions" style="justify-content:flex-start;padding:0">
+          <a class="btn primary" href="#/recruiting">Enter Recruitment Center</a>
+          <a class="btn" href="#/recruiting/rankings">Recruit Rankings</a>
+          <a class="btn" href="#/recruiting/signed">Signings</a>
+        </div>
+      </div>
+    </section>`;
+  const board = recruits.length ? `<div class="card reveal"><div class="hd"><h3>Recruit board · top of the class</h3><a href="#/recruiting">Full board</a></div>${recruits.slice(0, 8).map(r => `<a class="minirow" href="#/recruiting"><span class="rp-rank">${r.rank}</span><div style="min-width:0"><b>${esc(r.name)}</b><div class="sub">${r.position} · ${'★'.repeat(r.stars)} · OVR ${Math.round(r.overallActual)} / ${Math.round(r.overallPotential)}${r.leader ? ` · ${esc(T(r.leader).abbr)} leads at ${r.currentBid}` : r.status === 'SIGNED' ? ` · signed ${esc(T(r.signedTeam).abbr)}` : ''}</div></div></a>`).join('')}</div>`
+    : `<div class="card reveal empty" style="padding:34px"><b>${offline ? 'Recruitment Center offline' : 'Recruits are revealed as each round opens'}</b>${offline ? 'The recruiting service is not reachable right now.' : 'Sign in to the Recruitment Center to see your points and get ready for Round 1.'}</div>`;
+  const signings = `<div class="card reveal"><div class="hd"><h3>Latest signings</h3><a href="#/recruiting/signed">All signings</a></div>${signed.length ? signed.slice(0, 8).map(r => `<a class="minirow" href="#/recruiting/signed"><img src="${logo(r.signedTeam)}" alt=""><div style="min-width:0"><b>${esc(r.name)}</b><div class="sub">${r.position} · ${'★'.repeat(r.stars)} → ${esc(T(r.signedTeam).name)} · ${r.signedAmount} pts</div></div></a>`).join('') : `<div class="empty" style="padding:26px">No signings yet — the first clocks are ${cr?.status === 'ACTIVE' ? 'running' : 'not started'}.</div>`}</div>`;
+  const live = feed.length ? `<div class="card reveal"><div class="hd"><h3>Live recruiting</h3><a href="#/recruiting">Board</a></div>${feed.slice(0, 8).map(e => `<a class="minirow" href="#/recruiting"><img src="${logo(e.team)}" alt=""><div style="min-width:0"><b>${esc(T(e.team).name)}</b><div class="sub">${e.type === 'BID_WON' ? 'signed' : 'bid on'} ${e.position} ${esc(e.name)}${e.amount ? ` · ${e.amount}` : ''}</div></div></a>`).join('')}</div>` : '';
+  const champCard = champ ? `<a class="card reveal rp-champ" href="#/" onclick="setSeasonWeek(${wk.season},${wk.week});return false;" style="--c1:${C.colors.primary}">
+      <img class="rp-trophy" src="assets/brand/trophy.png" alt="">
+      <div><div class="cat">${wk.season} PCFL National Champions</div><h3>${esc(C.name)} ${esc(C.nickname)}</h3><p>${champ.wins}-${champ.losses} · ${champ.g.away.team === champ.champ ? champ.g.away.score : champ.g.home.score}–${champ.g.away.team === champ.champ ? champ.g.home.score : champ.g.away.score} over ${esc(T(champ.runner).name)} · MVP ${esc(champ.mvp.name)}</p><span class="more">Championship breakdown →</span></div>
+      <img class="rp-champ-logo" src="${logo(champ.champ, true)}" onerror="this.src='${logo(champ.champ)}'" alt=""></a>` : '';
+  return `${hero}
+    <div class="home-grid" style="margin-top:26px">
+      <div>
+        <div class="section-h"><span class="bar"></span><h2>${R.year} Recruiting Class</h2><span class="sub">${esc(season?.name || 'Recruitment Center')}</span><a class="more" href="#/recruiting">Recruitment Center →</a></div>
+        ${board}
+        ${live}
+      </div>
+      <aside class="rail" style="margin-top:64px">
+        ${champCard}
+        ${signings}
+        <div class="card reveal"><div class="hd"><h3>Final ${wk.season} Power Poll</h3><a href="#/rankings">Full Poll</a></div>${powerPollRowsMini(wk, 10)}</div>
+      </aside>
+    </div>`;
+}
+
 VIEWS.home = async function(){
   const wk = await weekData();
+  if (isRecruitingView()) return recruitingHomeHTML(wk);
   const ranks = ranksOf(wk);
   let champ = null;
   try { const c = await championshipData(wk); if (c) champ = championshipHTML(wk, c); } catch (e) { console.warn('championship presentation skipped', e); }
@@ -2081,7 +2156,10 @@ async function route(){
   // tear down anything from the previous view (e.g., the previous team's fight song)
   stopFightSong();
   main.innerHTML = `<div class="view wrap">${html}</div>`;
-  document.title = `PCFL Network — ${name === 'home' ? `Week ${App.week}, ${App.season} Season` : name[0].toUpperCase()+name.slice(1)}`;
+  if (isRecruitingView() && name !== 'home' && name !== 'recruiting') {
+    main.querySelector('.view')?.insertAdjacentHTML('afterbegin', `<div class="offseason-note"><span class="dot"></span> ${App.recruiting.year} Recruiting Period — showing final ${App.season} season data until Week 1 is played. <a href="#/recruiting">Recruitment Center →</a></div>`);
+  }
+  document.title = `PCFL Network — ${name === 'home' ? (isRecruitingView() ? `${App.recruiting.year} Recruiting Period` : `Week ${App.week}, ${App.season} Season`) : name[0].toUpperCase()+name.slice(1)}`;
   revealInit(main); animateWidths(main);
   main.querySelectorAll('[data-count]').forEach(n => countUp(n, +n.dataset.count));
   setupFightSong();
@@ -2127,17 +2205,36 @@ async function boot(){
   // weeks via the selector, but selection is intentionally not persisted —
   // returning visitors should see the newest content.
   App.week = seasonInfo.latest;
+  App.uiSeason = App.season;
+
+  // Offseason detection: the last played season ended with a title game (single game after
+  // the regular season) and no newer season has data yet → offer "<year+1> · Recruiting" and
+  // land on it. The Recruitment Center service (if reachable) supplies the live status.
+  try {
+    const lastWk = await getJSON(`data/${latest.year}/week${latest.latest}.json`);
+    let regular = 12; try { regular = (await getJSON(`data/${latest.year}/playoffs.json`)).regularWeeks || 12; } catch {}
+    if (lastWk.games.length === 1 && latest.latest > regular) App.recruiting = { year: latest.year + 1, service: null };
+    if (App.recruiting && window.PCFL_RECRUITING?.apiBase && !/REPLACE-WITH/.test(window.PCFL_RECRUITING.apiBase)) {
+      try { const st = await (await fetch(window.PCFL_RECRUITING.apiBase + '/state', { signal: AbortSignal.timeout(4000) })).json(); if (st.season?.year) { App.recruiting.year = st.season.year; App.recruiting.service = st; } } catch {}
+    }
+    if (App.recruiting) { App.season = latest.year; App.week = 'recruiting'; App.uiSeason = App.recruiting.year; }
+  } catch (e) { console.warn('offseason detection skipped', e); }
 
   renderChrome();
   setupDrawer();
   document.addEventListener('change', e => {
     if (e.target.matches('select.season-sel')){
-      App.season = +e.target.value; localStorage.setItem('pcfl-season', App.season);
-      const si = App.manifest.seasons.find(s=>s.year===App.season);
-      App.week = si.latest;
+      const y = +e.target.value;
+      if (App.recruiting && y === App.recruiting.year && !App.manifest.seasons.some(s => s.year === y)) {
+        App.uiSeason = y; App.season = latest.year; App.week = 'recruiting';
+      } else {
+        App.uiSeason = y; App.season = y; localStorage.setItem('pcfl-season', App.season);
+        const si = App.manifest.seasons.find(s=>s.year===App.season);
+        App.week = si.latest;
+      }
       renderChrome(); renderTicker(); route();
     } else if (e.target.matches('select.week-sel')){
-      App.week = +e.target.value;
+      App.week = e.target.value === 'recruiting' ? 'recruiting' : +e.target.value;
       renderChrome(); renderTicker(); route();
     }
   });

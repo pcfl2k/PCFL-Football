@@ -22,7 +22,16 @@ const S = {            // module state (survives route re-renders while on #/rec
   token: localStorage.getItem(TOKEN_KEY) || null, me: null, state: null, recruits: new Map(), feed: [],
   es: null, view: 'board', filters: null, sort: { key: 'rank', dir: 'asc' }, viewMode: localStorage.getItem('pcfl-rc-view') || 'cards',
   selected: new Set(), watch: new Set(), ledger: null, notifs: [], clock: null, savedFilters: [], adminData: null, filtersCollapsed: true,
+  demo: localStorage.getItem('pcfl-rc-demo') === '1', demoInfo: null,
 };
+/** Switch between the live recruiting and the commissioner's demo sandbox (separate database on the service). */
+async function setDemo(on, { quiet } = {}) {
+  S.demo = !!on; if (on) localStorage.setItem('pcfl-rc-demo', '1'); else localStorage.removeItem('pcfl-rc-demo');
+  S.recruits = new Map(); S.feed = []; S.selected.clear(); S.formula = undefined; S.insight = null; S.myBids = null; S.rosterCache = null;
+  try { await loadState(); } catch (e) { reportClientError(e, 'demo-switch'); }
+  connectSSE(); await draw();
+  if (!quiet) toast(on ? '🧪 Demo mode' : 'Back to live recruiting', on ? 'A private practice copy — nothing here touches the real recruiting.' : 'You are viewing the real 2029 recruiting again.', on ? 'info' : 'ok', 6000);
+}
 const defaultFilters = () => ({ pos: 'ALL', stars: new Set(), status: 'available', search: '', attrMin: {}, attrMode: 'pot', round: 'current' });
 S.filters = defaultFilters();
 
@@ -43,6 +52,7 @@ function countdown(iso) {
   const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3), s = Math.floor(ms % 60e3 / 1000), t = Math.floor(ms % 1000 / 100);
   return { text: `${h}:${pad(m)}:${pad(s)}.${t}`, ms };
 }
+const fmtHours = h => { h = Number(h) || 0; return h < 1 ? `${Math.round(h * 60)} min` : (Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`); };
 const initials = r => `${(r.firstName || '')[0] || ''}${(r.lastName || '')[0] || ''}`.toUpperCase();
 const myTeam = () => S.me?.team || null;
 const isCommish = () => S.me?.role === 'commissioner';
@@ -52,7 +62,7 @@ const nav = (sub) => { location.hash = '#/recruiting' + (sub ? '/' + sub : ''); 
 async function api(path, { method = 'GET', body, silent, _retry = 0 } = {}) {
   let res;
   try {
-    res = await fetch(CFG.apiBase + path, { method, headers: { 'Content-Type': 'application/json', ...(S.token ? { Authorization: `Bearer ${S.token}` } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) });
+    res = await fetch(CFG.apiBase + path, { method, headers: { 'Content-Type': 'application/json', ...(S.token ? { Authorization: `Bearer ${S.token}` } : {}), ...(S.demo ? { 'X-PCFL-Demo': '1' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) });
   } catch (netErr) {
     // transient network failure: retry idempotent reads with backoff; never retry writes (they could double-apply)
     if (method === 'GET' && _retry < 2) { await new Promise(r => setTimeout(r, 400 * (_retry + 1))); return api(path, { method, body, silent, _retry: _retry + 1 }); }
@@ -61,6 +71,10 @@ async function api(path, { method = 'GET', body, silent, _retry = 0 } = {}) {
   let json = {};
   try { json = await res.json(); } catch { /* empty */ }
   if (!res.ok) {
+    if (json.error?.code === 'DEMO_INACTIVE' && S.demo) { // the commissioner ended the demo: drop back to live transparently
+      S.demo = false; localStorage.removeItem('pcfl-rc-demo'); toast('Demo ended', 'The commissioner closed the demo sandbox. Showing live recruiting.', 'info', 6000);
+      return api(path, { method, body, silent });
+    }
     if (res.status === 401 && S.token && !path.startsWith('/auth/login')) { S.token = null; localStorage.removeItem(TOKEN_KEY); S.me = null; }
     const e = new Error(json.error?.message || `Request failed (${res.status})`); e.code = json.error?.code || 'HTTP_' + res.status; e.extra = json.error || {}; if (!silent) throw e; return null;
   }
@@ -114,7 +128,7 @@ async function mount() {
 /** Show the round-start ceremony if a round opened in the last 3 minutes and hasn't been shown yet. */
 function maybeCeremony() {
   const cr = currentRound(); if (!cr || !cr.startedAt || cr.status !== 'ACTIVE') return;
-  const key = `pcfl-rc-ceremony-${cr.id}`;
+  const key = `pcfl-rc-ceremony-${S.demo ? 'demo-' : ''}${cr.id}`;
   if (Date.now() - Date.parse(cr.startedAt) < 3 * 60e3 && !localStorage.getItem(key)) { localStorage.setItem(key, '1'); roundCeremony(cr); }
 }
 function teardown() { if (S.es) { S.es.close(); S.es = null; } if (S.clock) { clearInterval(S.clock); S.clock = null; } closeModal(); }
@@ -122,7 +136,8 @@ function teardown() { if (S.es) { S.es.close(); S.es = null; } if (S.clock) { cl
 async function loadState() {
   const st = await api('/state');
   S.skew = Date.now() - Date.parse(st.serverTime);
-  S.state = st; S.me = st.me;
+  S.state = st; S.me = st.me; S.demoInfo = st.demo || null;
+  if (st.mode !== 'demo' && S.demo) { S.demo = false; localStorage.removeItem('pcfl-rc-demo'); }
   if (S.me?.mustChangePw) S.forcePw = true;
   const rec = await api('/recruits');
   S.recruits = new Map(rec.recruits.map(r => [r.id, r]));
@@ -140,7 +155,8 @@ function renderOffline(e) {
 /* ------------------------------------------------------------ SSE */
 function connectSSE() {
   if (S.es) S.es.close();
-  const url = CFG.apiBase + '/events' + (S.token ? `?token=${encodeURIComponent(S.token)}` : '');
+  const qs = [S.token ? `token=${encodeURIComponent(S.token)}` : '', S.demo ? 'demo=1' : ''].filter(Boolean).join('&');
+  const url = CFG.apiBase + '/events' + (qs ? '?' + qs : '');
   const es = new EventSource(url); S.es = es;
   const on = (type, fn) => es.addEventListener(type, ev => { try { fn(JSON.parse(ev.data)); } catch (err) { console.error(err); } });
   let wasDown = false;
@@ -163,6 +179,8 @@ function connectSSE() {
   on('RECRUIT_REMOVED', d => { S.recruits.delete(d.recruitId); if (S.view === 'board') draw(); });
   on('RECRUITS_IMPORTED', async () => { await loadState(); draw(); });
   on('SYSTEM_NOTICE', d => toast('League notice', d.message, d.level === 'critical' ? 'err' : 'info'));
+  on('DEMO_STARTED', async d => { S.demoInfo = d.demo; if (!S.demo) { drawHero(); toast('Demo available', 'The commissioner opened a practice sandbox — use "Try the demo" in the menu.', 'info', 7000); } });
+  on('DEMO_STOPPED', async () => { if (S.demo) await setDemo(false); else { await loadState(); drawHero(); } });
 }
 function setLive(on) { const d = $('.rc-livehd .dot'); if (d) d.classList.toggle('off', !on); }
 function upsert(r) { if (!r) return; S.recruits.set(r.id, r); }
@@ -238,10 +256,11 @@ function heroHTML() {
     : roundEnd ? `<div class="lbl">${hardEnd && roundEnd === hardEnd ? 'Round ends in' : 'Round closes no sooner than'}</div><div class="time" data-closes="${roundEnd}" data-rid="0">${countdown(roundEnd).text}</div>${nextClose && nextClose !== roundEnd ? `<div class="sub2">Next player signs in <b data-closes="${nextClose}" data-rid="0">${countdown(nextClose).text}</b></div>` : ''}`
     : cr ? `<div class="lbl">${esc(cr.name.split('—')[0].trim())}</div><div class="time" style="font-size:34px">${cr.status === 'COMPLETE' ? 'COMPLETE' : 'NOT STARTED'}</div>`
     : `<div class="lbl">Recruiting</div><div class="time" style="font-size:34px">OFFSEASON</div>`;
-  const chip = cr ? `<div class="rc-roundchip"><span class="live ${cr.status === 'ACTIVE' ? '' : cr.status === 'COMPLETE' ? 'done' : 'idle'}"></span><b>Round ${cr.number}</b><span class="sep">·</span>${esc(cr.type === 'PORTAL' ? 'Portal' : (cr.name.split('—')[1] || cr.name).trim())}<span class="sep">·</span>${cr.startedAt ? `Started ${fmtDate(cr.startedAt)}` : cr.startMode === 'auto' ? (cr.startAfterHours != null ? `Auto-starts ${cr.startAfterHours}h after previous` : 'Auto-starts when previous completes') : 'Manual start'}${cr.status === 'ACTIVE' ? `<span class="sep">·</span>${cr.closeMode === 'after-hours' ? `${cr.closeAfterHours}h limit` : `bids stand ${cr.windowHours || st.season?.windowHours}h`}` : ''}</div>` : '';
-  return `<div id="rc-hero" class="rc-hero reveal in" style="--hero-a:${team ? team.colors.primary : '#6a0011'};--hero-b:${team ? team.colors.secondary : '#2a2f3a'}">
+  const chip = cr ? `<div class="rc-roundchip"><span class="live ${cr.status === 'ACTIVE' ? '' : cr.status === 'COMPLETE' ? 'done' : 'idle'}"></span><b>Round ${cr.number}</b><span class="sep">·</span>${esc(cr.type === 'PORTAL' ? 'Portal' : (cr.name.split('—')[1] || cr.name).trim())}<span class="sep">·</span>${cr.startedAt ? `Started ${fmtDate(cr.startedAt)}` : cr.startMode === 'auto' ? (cr.startAfterHours != null ? `Auto-starts ${cr.startAfterHours}h after previous` : 'Auto-starts when previous completes') : 'Manual start'}${cr.status === 'ACTIVE' ? `<span class="sep">·</span>${cr.closeMode === 'after-hours' ? `${fmtHours(cr.closeAfterHours)} limit` : `bids stand ${fmtHours(cr.windowHours || st.season?.windowHours)}`}` : ''}</div>` : '';
+  return `<div id="rc-hero" class="rc-hero reveal in ${S.demo ? 'demo' : ''}" style="--hero-a:${S.demo ? '#3b1a6e' : team ? team.colors.primary : '#6a0011'};--hero-b:${S.demo ? '#1a1030' : team ? team.colors.secondary : '#2a2f3a'}">
     <div class="bg"></div><div class="grid-lines"></div>
-    <div class="chyron"><span class="dot"></span> PCFL Recruitment Center${season ? ` · ${season.year} Recruiting` : ''}</div>
+    <div class="chyron"><span class="dot"></span> PCFL Recruitment Center${season ? ` · ${season.year} Recruiting` : ''}${S.demo ? ' · DEMO' : ''}</div>
+    ${S.demo ? `<div class="banner demo">🧪 Demo mode — a private practice copy of the recruiting class. Bids, points and signings here are throwaway and never touch the real ${S.demoInfo?.startedAt ? '' : ''}recruiting.${S.demoInfo?.windowHours ? ` Clocks run ${Math.round(S.demoInfo.windowHours * 60)} min.` : ''} <button class="rc-btn sm ghost" style="color:#fff;border-color:rgba(255,255,255,.3)" data-rc="demoexit">Exit demo</button></div>` : ''}
     <div class="rc-hero-inner">
       <div><div class="title">Recruitment<br>Center</div><div class="sub">${season ? esc(season.name) : 'No active recruiting season'}${st.season?.suspended ? ' · <span style="color:#ff5a6e">BIDDING SUSPENDED</span>' : ''}</div>${chip}</div>
       <div class="rc-clock">${clock}${cr ? `<div class="round">${openRecruits.length} recruits open${poolCount ? ` · ${poolCount} in Portal Pool` : ''}</div>` : ''}</div>
@@ -265,6 +284,7 @@ function subnavHTML() {
     ${link('rankings', 'Rankings')}
     ${isCommish() ? link('admin', 'Admin') : ''}
     <span class="spacer"></span>
+    ${S.me && S.demoInfo?.active && !S.demo ? `<a href="#" class="rc-demo-chip" data-rc="demoenter" title="Practice in a throwaway copy of the recruiting class">🧪 Try the demo</a>` : ''}${S.demo ? `<a href="#" class="rc-demo-chip on" data-rc="demoexit">🧪 Demo · exit</a>` : ''}
     ${S.me ? `<a href="#" class="rc-notif" data-rc="notifs">🔔${S.me.unread ? `<span class="cnt hot">${S.me.unread}</span>` : ''}</a>${link('settings', 'Settings')}<a href="#" data-rc="logout">Sign out</a>` : `<a href="#" data-rc="login">Sign in</a>`}
   </nav>`;
 }
@@ -615,7 +635,8 @@ async function adminHTML() {
     ${cr?.status === 'ACTIVE' ? `<button class="rc-btn dark" data-rc="pause">⏸ Pause recruitment</button>` : cr?.status === 'PAUSED' ? `<button class="rc-btn primary" data-rc="resume">▶ Resume recruitment</button>` : ''}
     ${next && !(cr && ['ACTIVE', 'PAUSED'].includes(cr.status)) ? `<button class="rc-btn primary" data-rc="startround:${next.id}">▶ Start ${esc(next.name.split('—')[0].trim())} (${roundN(next.id)} players)</button>` : ''}
     ${A.suspended ? `<button class="rc-btn gold" data-rc="unsuspend">Lift bidding suspension</button>` : `<button class="rc-btn" data-rc="suspend">⚠ Suspend all bidding</button>`}
-    <button class="rc-btn" data-rc="import">⇪ Import recruits</button><button class="rc-btn" data-rc="addrecruit">+ Add recruit</button><button class="rc-btn" data-rc="provision">🔑 Team logins</button><button class="rc-btn" data-rc="audit">Audit log</button><button class="rc-btn" data-rc="health">System health</button>
+    <button class="rc-btn" data-rc="import">⇪ Import recruits</button><button class="rc-btn" data-rc="addrecruit">+ Add recruit</button>${S.demo ? '' : `<button class="rc-btn" data-rc="provision">🔑 Team logins</button>`}<button class="rc-btn" data-rc="audit">Audit log</button><button class="rc-btn" data-rc="health">System health</button>
+    <button class="rc-btn ${S.demoInfo?.active ? 'gold' : ''}" data-rc="demo">🧪 ${S.demo ? 'Demo controls' : S.demoInfo?.active ? 'Demo running' : 'Demo mode'}</button>
     <button class="rc-btn ghost sm" data-rc="settings">Settings</button></div>
   <div class="rc-admin-grid">
     <div class="card"><div class="rc-livehd">Rounds · ${esc(s.name)}<span style="margin-left:auto;font-size:11px;color:var(--muted)">${k.total} recruits · ${k.signed} signed · ${k.unsigned} unsigned</span><button class="rc-btn sm ghost" style="margin-left:8px" data-rc="editround:new">+ Round</button></div><ul class="rc-list rc-rounds">${A.rounds.map(r => `<li><div><b>${esc(r.name)}</b> ${r.type === 'PORTAL' ? '<span class="rc-tag pool">Portal</span>' : ''}<div class="rc-note">${roundN(r.id)} players${r.startedAt ? ` · started ${fmtDate(r.startedAt)}` : ''}${r.pauseTotalMs ? ` · paused ${Math.round(r.pauseTotalMs / 60000)}m` : ''}<br><code>${r.startMode === 'auto' ? (r.startAfterHours != null ? `auto ${r.startAfterHours}h after prev` : 'auto on prev complete') : 'manual start'}</code> <code>${r.closeMode === 'after-hours' ? `closes after ${r.closeAfterHours}h` : 'closes when all resolved'}</code> <code>${(r.rolling ?? (s.rollingBids ? 1 : 0)) ? 'rolling' : 'fixed'} ${r.windowHours || s.windowHours}h</code>${r.unbidToPool ? ' <code>unbid → pool</code>' : ''}</div></div><span class="rc-status ${r.status}">${r.status}</span><span class="acts">${['DRAFT', 'SCHEDULED'].includes(r.status) ? `<button class="rc-btn sm primary" data-rc="startround:${r.id}">Start</button>` : ''}${['ACTIVE', 'PAUSED'].includes(r.status) ? `<button class="rc-btn sm" data-rc="closeround:${r.id}">Force close</button>` : ''}<button class="rc-btn sm ghost" data-rc="editround:${r.id}">Settings</button></span></li>`).join('')}</ul></div>
@@ -761,6 +782,19 @@ const ACTIONS = {
   doallocall: async () => { try { await api('/admin/allocations/all', { method: 'POST', body: { allocated: +$('#rc-alloc-all').value, reason: $('#rc-alloc-reason').value } }); closeModal(); toast('✓ Allocations applied', 'Every franchise updated.', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } },
   setalloc: slug => modal(`<div class="rc-mhead"><div><h3>Set exact allocation · ${esc(T(slug).name)}</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><div class="rc-form"><div><label>Allocated points</label><input id="rc-alloc-one" type="number" min="0" value="${S.adminData.teams.find(t => t.slug === slug)?.points?.allocated ?? S.state.season.defaultAllocation}"></div><div class="full"><label>Reason (audited)</label><input id="rc-alloc-reason" placeholder="Expansion team bonus"></div></div><div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="dosetalloc:${slug}">Save</button></div></div>`, 'sm'),
   dosetalloc: async slug => { try { const out = await api(`/admin/teams/${slug}/allocation`, { method: 'POST', body: { allocated: +$('#rc-alloc-one').value, reason: $('#rc-alloc-reason').value } }); closeModal(); toast('✓ Allocation set', `${T(slug).abbr} allocated ${out.points.allocated}`, 'ok'); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } },
+  demoenter: () => setDemo(true),
+  demoexit: () => setDemo(false),
+  demo: () => {
+    const d = S.demoInfo;
+    modal(`<div class="rc-mhead"><div><h3>🧪 Demo mode</h3><div class="m"><span>A sandbox for coaches to practice bidding — separate database, throwaway data</span></div></div><button class="x" data-rc="close">×</button></div>
+      <div class="rc-mbody">${d?.active ? `<p><b>Demo is running</b> since ${fmtDate(d.startedAt)} · clocks ${Math.round((d.windowHours || 0) * 60)} min · started by ${esc(d.startedBy || 'commissioner')}.</p><p class="rc-note">Coaches see a "Try the demo" chip after signing in. Everyone uses their normal login. The demo has its own copy of the recruiting class, its own points (${esc(String(S.demo && S.state.season ? S.state.season.defaultAllocation : '—'))} default), rounds and ledger. Stopping deletes all of it; the real recruiting is never affected either way.</p>
+        <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Close</button>${S.demo ? '<button class="rc-btn" data-rc="demoexit">Exit demo view</button>' : '<button class="rc-btn dark" data-rc="demoenter">Enter demo</button>'}<button class="rc-btn primary" data-rc="demostop">Stop demo &amp; delete its data</button></div>`
+      : `<div class="rc-form"><div><label>Clock length (minutes)</label><input id="rc-demo-min" type="number" min="1" max="1440" value="6"></div><div><label>Points per team</label><input id="rc-demo-alloc" type="number" min="0" value="500"></div><div><label>Copy the real recruit class</label><select id="rc-demo-copy"><option value="1">Yes — same 220 recruits</option><option value="0">No — empty board (import later)</option></select></div><div><label>Open Round 1 immediately</label><select id="rc-demo-start"><option value="1">Yes</option><option value="0">No, I'll start it</option></select></div></div>
+        <p class="rc-note" style="margin-top:10px">Runs on a separate database on the service. Signed-in coaches get a "Try the demo" chip; in demo the page is clearly marked and every bid, point and signing is fake. Rounds auto-advance on the shortened clocks so a full recruiting cycle can be rehearsed in under an hour.</p>
+        <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="demostart">Start demo</button></div>`}</div>`, 'sm');
+  },
+  demostart: async (_, el) => { el.disabled = true; try { const min = intIn($('#rc-demo-min').value, 1, 1440, 6); await api('/admin/demo/start', { method: 'POST', body: { windowHours: min / 60, allocation: intIn($('#rc-demo-alloc').value, 0, 1e6, 500), copyRecruits: $('#rc-demo-copy').value === '1', startRound: $('#rc-demo-start').value === '1' } }); closeModal(); toast('🧪 Demo started', 'Entering the sandbox now.', 'ok'); await setDemo(true, { quiet: true }); } catch (e) { el.disabled = false; toast('Demo not started', e.message, 'err', 6000); } },
+  demostop: async () => { if (!confirm('Stop the demo and delete all demo bids, points and signings? Live recruiting is unaffected.')) return; try { if (S.demo) await setDemo(false, { quiet: true }); await api('/admin/demo/stop', { method: 'POST', body: {} }); closeModal(); toast('Demo stopped', 'Sandbox data deleted.', 'info'); await loadState(); draw(); } catch (e) { toast('Error', e.message, 'err'); } },
   heal: async () => { try { const out = await api('/admin/heal', { method: 'POST', body: {} }); toast(out.fixes.length ? `Self-heal repaired ${out.fixes.length} cached value(s)` : '✓ All caches consistent', out.reconcile.ok ? 'Ledger reconciliation clean.' : `${out.reconcile.issues.length} ledger issue(s) remain — see health.`, out.reconcile.ok ? 'ok' : 'err', 7000); } catch (e) { toast('Heal failed', e.message, 'err'); } },
   backup: async () => { try { const out = await api('/admin/backup', { method: 'POST', body: {} }); toast('✓ Backup written', out.file.split(/[\\/]/).pop(), 'ok'); } catch (e) { toast('Backup failed', e.message, 'err'); } },
   settingsadmin: () => {},
