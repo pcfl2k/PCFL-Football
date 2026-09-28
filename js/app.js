@@ -25,7 +25,7 @@ const fmtDate = d => d || '';
 
 async function getJSON(path){
   if (App.cache[path]) return App.cache[path];
-  const r = await fetch(path);
+  const r = await fetch(path, { cache: 'no-cache' }); // always revalidate: published data is never served stale
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return (App.cache[path] = await r.json());
 }
@@ -2174,7 +2174,7 @@ async function route(){
    the route shows a graceful offline card and every other page is untouched. */
 VIEWS.recruiting = async function(sub, id, _, q){
   try {
-    const mod = await import(new URL('js/recruiting.js?v=20260927a', document.baseURI).href);
+    const mod = await import(new URL('js/recruiting.js?v=__BUILD__', document.baseURI).href);
     return mod.render({ App, T, logo, esc, haptic, sub, id, q, base: document.baseURI });
   } catch (e) {
     console.error('recruiting module failed to load', e);
@@ -2183,7 +2183,32 @@ VIEWS.recruiting = async function(sub, id, _, q){
 };
 
 /* ============================= boot ============================== */
+/* ---- Freshness guard -------------------------------------------------------
+   GitHub Pages serves every file with max-age=600, and this is a single-page app
+   that people leave open for days. Two things keep everyone on the current build:
+   1. The deploy stamps every asset URL and <meta name="pcfl-build"> with a build id
+      (see the workflow), so a given index.html always loads matching CSS/JS.
+   2. The page compares its own stamp with version.json (fetched uncached) on
+      arrival, every 5 minutes, and whenever the tab regains focus. A stale copy
+      re-navigates with a cache-busting query on arrival, or shows an update bar. */
+const BUILD = document.querySelector('meta[name="pcfl-build"]')?.content || 'dev';
+async function checkBuild(reason){
+  if (BUILD === 'dev' || BUILD === '__BUILD__') return;                      // local checkout: nothing to compare
+  let v; try { v = await (await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' })).json(); } catch { return; }
+  if (!v?.build || v.build === BUILD) return;
+  const key = 'pcfl-reloaded-for';
+  let already = null; try { already = sessionStorage.getItem(key); } catch {}
+  const refresh = () => { try { sessionStorage.setItem(key, v.build); } catch {} location.replace(`${location.pathname}?b=${encodeURIComponent(v.build)}${location.hash}`); };
+  // arriving on a cached page, or idle on a read-only page: just get the new build (once per build id)
+  if (already !== v.build && (reason === 'boot' || !location.hash.startsWith('#/recruiting'))) return refresh();
+  if (document.getElementById('update-bar')) return;
+  document.body.insertAdjacentHTML('beforeend', `<div id="update-bar" class="update-bar"><span>PCFL Network has been updated.</span><button type="button">Refresh now</button></div>`);
+  document.querySelector('#update-bar button').addEventListener('click', refresh);
+}
 async function boot(){
+  checkBuild('boot');
+  setInterval(() => checkBuild('poll'), 5 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkBuild('visible'); });
   // staging environment indicator
   if (/\/staging(\/|$)/.test(location.pathname)){
     document.body.insertAdjacentHTML('beforeend',
