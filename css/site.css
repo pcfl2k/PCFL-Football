@@ -1183,3 +1183,8 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
 .rp-champ .rp-champ-logo { position: absolute; right: -14px; bottom: -18px; width: 110px; height: 110px; opacity: .16; }
 @media (max-width: 760px){ .rp-hero { min-height: 420px; } .rp-inner { padding: 74px 20px 24px; } .rp-title { font-size: 56px; } .rp-stats { gap: 14px; } }
 @media (prefers-reduced-motion: reduce){ .rp-status .rp-dot, .rp-chyron .dot, .offseason-note .dot { animation: none !important; } }
+
+/* ---- "new build available" bar (see checkBuild in app.js) */
+.update-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9000; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 16px; background: #15181d; color: #fff; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.35); font-size: 13px; max-width: calc(100vw - 32px); }
+.update-bar button { background: var(--gold, #f1be48); color: #15181d; border: 0; border-radius: 6px; padding: 7px 12px; font-family: var(--font-head); letter-spacing: .06em; font-size: 12px; cursor: pointer; }
+.update-bar button:hover { filter: brightness(1.08); }

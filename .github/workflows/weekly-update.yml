@@ -80,6 +80,17 @@ jobs:
           rm -rf site/.git site/.github site/staging/.git site/staging/.github site/staging/drops
           touch site/.nojekyll
 
+      - name: Stamp build id (cache busting + client freshness check)
+        run: |
+          STAMP="${GITHUB_SHA::10}-${GITHUB_RUN_NUMBER}"
+          for f in site/index.html site/js/app.js site/staging/index.html site/staging/js/app.js; do
+            [ -f "$f" ] && sed -i "s/__BUILD__/${STAMP}/g" "$f"
+          done
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "{\"build\":\"$STAMP\",\"at\":\"$NOW\"}" > site/version.json
+          cp site/version.json site/staging/version.json
+          echo "build stamp: $STAMP"
+
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:

@@ -70,15 +70,30 @@ async function api(path, { method = 'GET', body, silent, _retry = 0 } = {}) {
   }
   let json = {};
   try { json = await res.json(); } catch { /* empty */ }
+  // sliding sessions: the service hands back a renewed token while you stay active
+  const fresh = res.headers.get('x-pcfl-token');
+  if (fresh && S.token && fresh !== S.token) { S.token = fresh; localStorage.setItem(TOKEN_KEY, fresh); }
   if (!res.ok) {
     if (json.error?.code === 'DEMO_INACTIVE' && S.demo) { // the commissioner ended the demo: drop back to live transparently
       S.demo = false; localStorage.removeItem('pcfl-rc-demo'); toast('Demo ended', 'The commissioner closed the demo sandbox. Showing live recruiting.', 'info', 6000);
       return api(path, { method, body, silent });
     }
-    if (res.status === 401 && S.token && !path.startsWith('/auth/login')) { S.token = null; localStorage.removeItem(TOKEN_KEY); S.me = null; }
+    if (res.status === 401 && S.token && !path.startsWith('/auth/login')) {
+      // The stored sign-in is no longer valid (expired, revoked, locked). Drop it loudly —
+      // never keep showing a "signed in" page over anonymous data.
+      sessionLost(json.error?.message || 'Your sign-in expired.');
+      if (method === 'GET') return api(path, { method, body, silent, _retry }); // re-read anonymously so the page still renders
+    }
     const e = new Error(json.error?.message || `Request failed (${res.status})`); e.code = json.error?.code || 'HTTP_' + res.status; e.extra = json.error || {}; if (!silent) throw e; return null;
   }
   return json;
+}
+/** Forget a dead sign-in and tell the user why (shown as a banner until they sign in again or dismiss it). */
+function sessionLost(why) {
+  S.token = null; localStorage.removeItem(TOKEN_KEY); S.me = null; S.myBids = null; S.selected.clear(); S.forcePw = false;
+  S.sessionLost = why;
+  if (S.es) connectSSE(); // reconnect the live stream anonymously
+  toast('Signed out', `${why} Sign in again to keep bidding.`, 'err', 8000);
 }
 /** Report a browser-side failure to the service log (best effort) and show a recoverable error card. */
 function reportClientError(e, where) {
@@ -218,7 +233,8 @@ async function draw() {
     else if (S.view === 'admin') body = isCommish() ? await adminHTML() : loginHTML('Commissioner sign-in required');
     else if (S.view === 'settings') body = S.me ? changePwHTML(false) : loginHTML();
     else body = boardHTML();
-    root.innerHTML = heroHTML() + subnavHTML() + body + massHTML();
+    const lost = S.sessionLost && !S.me ? `<div class="card rc-sessionlost reveal in"><span class="ic">⚠</span><div><b>You were signed out.</b> ${esc(S.sessionLost)} ${S.state?.season?.visibility === 'current' ? 'Until you sign in, only players from rounds that have already opened are shown.' : ''}</div><button class="rc-btn primary sm" data-rc="login">Sign in</button><button class="x" data-rc="dismisslost" title="Dismiss">×</button></div>` : '';
+    root.innerHTML = heroHTML() + subnavHTML() + lost + body + massHTML();
     if (S.view === 'board') bindBoard();
     if (S.view === 'ledger') mountRosterCharts();
   } catch (e) {
@@ -335,8 +351,21 @@ function visibleRecruits() {
   };
   return list.sort((a, b) => { const x = val(a), y = val(b); if (x === y) return a.rank - b.rank; return (x > y ? 1 : -1) * m; });
 }
+/** Human description of every filter currently narrowing the board (for the "hidden" hint). */
+function activeFilterText() {
+  const f = S.filters, cr = currentRound(), parts = [];
+  if (f.round === 'current') { if (cr) parts.push(`Round ${cr.number} only`); } else if (f.round !== 'all') { const r = S.state.rounds.find(x => x.id === +f.round); parts.push(r ? `${r.name.split('—')[0].trim()} only` : 'one round only'); }
+  const statusLabel = { available: 'Available only (signed and unsigned players hidden)', nobids: 'no bids', pool: 'Portal Pool', signed: 'signed', leading: 'I lead', outbid: 'outbid', mine: 'my bids', watch: 'watchlist' }[f.status];
+  if (statusLabel) parts.push(statusLabel);
+  if (f.pos !== 'ALL') parts.push(f.pos);
+  if (f.stars.size) parts.push([...f.stars].sort().map(n => n + '★').join('/'));
+  if (f.search) parts.push(`search "${f.search}"`);
+  const mins = Object.entries(f.attrMin).filter(([, v]) => v).map(([k, v]) => `${k} ≥ ${v}`); if (mins.length) parts.push(mins.join(', '));
+  return parts.join(' · ') || 'no filters';
+}
 function boardHTML() {
   const list = visibleRecruits();
+  const hidden = S.recruits.size - list.length;
   const f = S.filters, cr = currentRound();
   const posCounts = {}; for (const r of S.recruits.values()) if (f.round !== 'current' || !cr || r.roundId === cr.id) posCounts[r.position] = (posCounts[r.position] || 0) + 1;
   const sortOpts = [['rank', 'Overall rank'], ['score', 'Recruit score'], ['pot', 'Potential OVR'], ['ovr', 'Actual OVR'], ['bid', 'Current bid'], ['time', 'Time remaining'], ['bidders', 'Most contested'], ['stars', 'Stars'], ['name', 'Name'], ['pos', 'Position']];
@@ -354,15 +383,29 @@ function boardHTML() {
         ${S.savedFilters.length ? `<h4 style="margin-top:12px">Saved filters</h4><div class="rc-pos">${S.savedFilters.map(sf => `<button data-rc="loadfilter:${sf.id}" title="Click to apply · shift-click to delete">${esc(sf.name)}</button>`).join('')}</div>` : ''}</div>
     </aside>
     <section>
-      <div class="rc-toolbar"><span class="rc-count"><b>${list.length}</b> recruits</span><span class="grow"></span>
+      <div class="rc-toolbar"><span class="rc-count"><b>${list.length}</b> recruits${hidden > 0 ? ` <button class="rc-chip rc-hiddenchip" data-rc="showall" title="${esc(activeFilterText())} — click to clear every filter and show all ${S.recruits.size} loaded players">${hidden} hidden by filters · show all</button>` : ''}</span><span class="grow"></span>
         <div class="rc-sort">Sort <select data-rcc="sort">${sortOpts.map(([k, l]) => `<option value="${k}" ${S.sort.key === k && !ATTRS.includes(S.sort.key) ? 'selected' : ''}>${l}</option>`).join('')}${ATTRS.map(a => `<option value="${a}" ${S.sort.key === a ? 'selected' : ''}>${a} ${S.sort.mode === 'act' ? 'actual' : 'potential'}</option>`).join('')}</select><button class="rc-btn sm ghost" data-rc="sortdir" title="Toggle direction">${S.sort.dir === 'asc' ? '↑' : '↓'}</button></div>
         <div class="rc-view"><button class="${S.viewMode === 'cards' ? 'on' : ''}" data-rc="viewmode:cards">▦ Cards</button><button class="${S.viewMode === 'table' ? 'on' : ''}" data-rc="viewmode:table">☰ Table</button></div>
         ${myTeam() ? `<label class="rc-count" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" data-rcc="selectall" ${list.length && list.every(r => S.selected.has(r.id)) ? 'checked' : ''}> Select all</label>` : ''}</div>
       ${list.length ? (S.viewMode === 'cards' ? `<div class="rc-grid" id="rc-grid">${list.map(cardHTML).join('')}</div>` : `<div class="card rc-tablewrap"><table class="rc-table"><thead><tr>${myTeam() ? '<th></th>' : ''}<th data-rc="sortby:rank" class="${S.sort.key === 'rank' ? 'on' : ''}">Rk</th><th class="l" data-rc="sortby:name">Player</th><th data-rc="sortby:pos">Pos</th><th data-rc="sortby:stars">★</th>${ATTRS.map(a => `<th data-rc="sortby:${a}" class="${S.sort.key === a ? 'on' : ''}" title="${ATTR_NAMES[a]} — click to cycle actual/potential ↓↑">${a}${S.sort.key === a ? (S.sort.mode === 'act' ? ' A' : ' P') + (S.sort.dir === 'asc' ? '↑' : '↓') : ''}</th>`).join('')}<th data-rc="sortby:ovr">OVR</th><th data-rc="sortby:pot">POT</th><th class="l">Leader</th><th data-rc="sortby:bid">Bid</th><th data-rc="sortby:time">Time</th></tr></thead><tbody>${list.map(rowHTML).join('')}</tbody></table></div>`)
-      : `<div class="card rc-empty" style="padding:50px"><b style="font-family:var(--font-head);font-size:18px;display:block;color:var(--text)">No recruits match</b>${S.recruits.size ? 'Try clearing a filter.' : (S.state.season && S.state.season.visibility === 'current' && !isCommish() ? 'Players are revealed when the commissioner opens each round — check back when Round ' + (currentRound()?.number || 1) + ' starts.' : 'The commissioner has not imported a recruiting class yet.')}</div>`}
+      : `<div class="card rc-empty" style="padding:50px"><b style="font-family:var(--font-head);font-size:18px;display:block;color:var(--text)">${S.recruits.size ? 'No recruits match your filters' : 'No recruits to show'}</b>${S.recruits.size
+        ? `All <b>${S.recruits.size}</b> loaded players are hidden by the current filters (${esc(activeFilterText())}).<div style="margin-top:14px"><button class="rc-btn dark" data-rc="showall">Show all ${S.recruits.size} players</button></div>`
+        : (!S.me && S.state.season && S.state.season.visibility === 'current' ? `Players are revealed when the commissioner opens each round — check back when Round ${currentRound()?.number || 1} starts.${S.token || S.sessionLost ? '' : ' Coaches and the commissioner: sign in to see your recruiting view.'}<div style="margin-top:14px"><button class="rc-btn dark" data-rc="login">Sign in</button></div>` : (S.state.season && S.state.season.visibility === 'current' && !isCommish() ? 'Players are revealed when the commissioner opens each round — check back when Round ' + (currentRound()?.number || 1) + ' starts.' : 'The commissioner has not imported a recruiting class yet.'))}</div>`}
     </section>
     <aside class="rc-side rc-feedcol"><div class="card"><div class="rc-livehd"><span class="dot ${S.es && S.es.readyState === 1 ? '' : 'off'}"></span> Live recruiting</div><div class="rc-feed" id="rc-feed">${feedHTML()}</div></div></aside>
   </div>`;
+}
+/** Minimum bid for *me* on this recruit: leaders raise by 1; challengers pay the bid-war escalator (server-computed minBid). */
+function minBidFor(r) { return r.leader && r.leader === myTeam() ? r.currentBid + 1 : (r.minBid ?? (r.currentBid || 0) + 1); }
+/** Explains the escalator on the bid form once a player is in (or about to enter) a bid war. */
+function escalationNote(r) {
+  const s = S.state.season; if (!s?.escalationOn || !r.leader) return '';
+  const n = r.leadChanges || 0, after = s.escalationAfter || 3, every = s.escalationEvery || 2, base = s.escalationBase || 3;
+  const stepFor = k => { if (k < after) return 1; let v = base * 2 ** Math.floor((k - after) / every); if (s.escalationCap > 0) v = Math.min(v, s.escalationCap); return v; };
+  if (n + 2 < after) return '';
+  const next = stepFor(n + 2);
+  const mine = r.leader === myTeam();
+  return `<div class="rc-note rc-escnote">${mine ? `You lead. If another franchise takes over, they must raise by at least <b>+${stepFor(n + 1)}</b>${next !== stepFor(n + 1) ? ` and you would need <b>+${next}</b> to take it back` : ''}` : `🔥 Bid-war protection: the lead has changed <b>${n}</b> time${n === 1 ? '' : 's'}. Taking it now needs at least <b>+${r.minRaise}</b>; the next takeover will need <b>+${next}</b>`}. Every takeover still resets the ${fmtHours(currentRound()?.windowHours || s.windowHours)} clock.</div>`;
 }
 function statusTag(r) {
   const me = myTeam();
@@ -396,7 +439,7 @@ function cardHTML(r) {
       <div><div class="name">${esc(r.name)}</div><div class="meta"><span>Rank <b>#${r.rank}</b></span><span>${r.position} <b>#${r.posRank}</b></span><span>OVR <b>${Math.round(r.overallActual)}</b> / <b>${Math.round(r.overallPotential)}</b></span>${S.watch.has(r.id) ? '<span style="color:var(--gold)">★ target</span>' : ''}</div></div></div>
     ${attrsHTML(r)}
     ${r.status === 'SIGNED' ? `<div class="rc-signed-strip"><img src="${logo(r.signedTeam)}" alt=""><span>Signed · <b>${esc(T(r.signedTeam).name)}</b></span><span class="pts">${r.signedAmount} pts</span></div>`
-    : `<div class="bidrow"><div class="cur">${r.currentBid ? `<img src="${logo(r.leader)}" alt=""><div><b>${r.currentBid}</b><small>${esc(T(r.leader).abbr)} leads</small></div>` : `<div><b class="nobid">—</b><small>No bids · min 1</small></div>`}</div>
+    : `<div class="bidrow"><div class="cur">${r.currentBid ? `<img src="${logo(r.leader)}" alt=""><div><b>${r.currentBid}</b><small>${esc(T(r.leader).abbr)} leads${r.minRaise > 1 ? ` · <span class="rc-war" title="Bid war: the lead has changed ${r.leadChanges} times — taking it now needs at least +${r.minRaise} points">🔥 ×${r.leadChanges} · min +${r.minRaise}</span>` : ''}</small></div>` : `<div><b class="nobid">—</b><small>No bids · min 1</small></div>`}</div>
         ${me && biddable ? `<button class="rc-btn ${r.leader === me ? 'dark' : 'primary'} sm" data-rc="bid:${r.id}">${r.leader === me ? 'Raise' : r.status === 'POOL' ? 'Sign from pool' : 'Place bid'}</button>` : `<button class="rc-btn sm" data-rc="open:${r.id}">Details</button>`}
         <div class="tl"><span>${statusTag(r)}</span>${r.status === 'OPEN' ? `<span class="t" data-closes="${r.closesAt}" data-rid="${r.id}">${countdown(r.closesAt).text}</span>` : ''}</div></div>`}
   </article>`;
@@ -439,7 +482,7 @@ async function openPlayer(id) {
         <h4>Bid history</h4>${hist.length ? `<table class="rc-hist">${d.events.filter(e => e.type !== 'BID_RAISED').map(e => `<tr class="${e.type === 'BID_OUTBID' ? 'out' : e.type === 'BID_WON' ? 'won' : ''}"><td>${fmtTs(e.at)}</td><td><img src="${logo(e.team)}" alt="">${esc(T(e.team).abbr)}</td><td>${e.type === 'BID_OUTBID' ? 'outbid' : e.type === 'BID_WON' ? 'SIGNED' : e.type === 'BID_WITHDRAWN' ? 'withdrawn' : 'bid'}</td><td>${e.amount ?? ''}</td></tr>`).join('')}</table>` : '<div class="rc-empty">No bids yet.</div>'}</div>
       <div><h4>Current recruitment</h4><div class="rc-curbid">${r.status === 'SIGNED' ? `<img src="${logo(r.signedTeam)}" alt=""><div><b>${r.signedAmount}</b><small>Signed · ${esc(T(r.signedTeam).name)} · ${fmtDate(r.signedAt)}</small></div>` : r.currentBid ? `<img src="${logo(r.leader)}" alt=""><div><b>${r.currentBid}</b><small>${esc(T(r.leader).name)} leads${r.leader === me ? ' (you)' : ''}</small></div>` : `<div><b>—</b><small>No bids · minimum 1</small></div>`}</div>
         ${r.status === 'OPEN' ? `<div class="rc-note" style="margin-top:8px">Signs in <b data-closes="${r.closesAt}" data-rid="${r.id}">${countdown(r.closesAt).text}</b> · ${fmtDate(r.closesAt)}${S.state.season?.rollingBids ? ' · every new lead restarts the clock' : ''}</div>` : r.status === 'POOL' ? `<div class="rc-note" style="margin-top:8px">Portal Pool — not bid on in its round. ${portalOpen ? `The first bid opens a ${S.state.season?.poolBidHours || 24}h signing clock.` : 'Becomes available when the Portal period opens.'}</div>` : `<div class="rc-note" style="margin-top:8px">Status: ${r.status}</div>`}
-        ${canBid ? `<h4>Your bid</h4><div class="rc-bidform"><div><div class="rc-field"><input id="rc-bid-amt" type="number" min="${r.currentBid + 1}" value="${r.leader === me ? r.currentBid + 1 : r.currentBid + 1}" data-rc-enter="reviewbid"></div><div class="min">Minimum valid bid: <b>${r.currentBid + 1}</b> · Available: <b>${S.me.points?.available ?? 0}</b>${r.leader === me ? ` · You lead at ${r.currentBid}; only the increase is reserved` : ''}</div></div><button class="rc-btn primary" data-rc="reviewbid:${r.id}">Review bid</button></div>
+        ${canBid ? `<h4>Your bid</h4><div class="rc-bidform"><div><div class="rc-field"><input id="rc-bid-amt" type="number" min="${minBidFor(r)}" value="${minBidFor(r)}" data-rc-enter="reviewbid"></div><div class="min">Minimum valid bid: <b>${minBidFor(r)}</b> · Available: <b>${S.me.points?.available ?? 0}</b>${r.leader === me ? ` · You lead at ${r.currentBid}; only the increase is reserved` : ''}</div>${escalationNote(r)}</div><button class="rc-btn primary" data-rc="reviewbid:${r.id}">Review bid</button></div>
           ${r.leader === me && S.state.season?.allowWithdrawal && d.myBid ? `<div style="margin-top:10px"><button class="rc-btn sm ghost" data-rc="withdraw:${d.myBid.id}">Withdraw bid</button></div>` : ''}` : (!me && r.status === 'OPEN' ? `<div style="margin-top:14px"><button class="rc-btn gold" data-rc="login">Sign in to bid</button></div>` : '')}
       </div></div></div>`;
   modal(html, 'lg');
@@ -688,7 +731,7 @@ const ACTIONS = {
   loginlogo: (_, el) => { const slug = el.selectedOptions[0].dataset.slug; const img = $('#rc-login-logo'); if (img) { img.style.visibility = slug ? '' : 'hidden'; if (slug) img.src = logo(slug); } },
   dologin: async () => {
     const id = $('#rc-login-team')?.value, pw = $('#rc-login-pw')?.value, errEl = $('#rc-login-err');
-    try { const out = await api('/auth/login', { method: 'POST', body: { loginId: id, password: pw } }); S.token = out.token; localStorage.setItem(TOKEN_KEY, out.token); H.haptic(15); await loadState(); connectSSE(); toast('Welcome', out.team ? `Signed in as ${T(out.team).name}.` : 'Signed in as commissioner.', 'ok'); S.view = out.role === 'commissioner' ? 'admin' : 'board'; nav(S.view === 'board' ? '' : S.view); draw(); }
+    try { const out = await api('/auth/login', { method: 'POST', body: { loginId: id, password: pw } }); S.token = out.token; localStorage.setItem(TOKEN_KEY, out.token); S.sessionLost = null; H.haptic(15); await loadState(); connectSSE(); toast('Welcome', out.team ? `Signed in as ${T(out.team).name}.` : 'Signed in as commissioner.', 'ok'); S.view = out.role === 'commissioner' ? 'admin' : 'board'; nav(S.view === 'board' ? '' : S.view); draw(); }
     catch (e) { if (errEl) errEl.textContent = e.message; }
   },
   logout: async () => { await api('/auth/logout', { method: 'POST', body: {}, silent: true }); S.token = null; localStorage.removeItem(TOKEN_KEY); S.me = null; S.myBids = null; S.selected.clear(); S.forcePw = false; await loadState(); connectSSE(); nav(''); draw(); },
@@ -709,6 +752,8 @@ const ACTIONS = {
   attrmin: (a, el) => { S.filters.attrMin[a] = +el.value || 0; clearTimeout(S._t); S._t = setTimeout(() => { const foc = document.activeElement === el; const v = el.value; draw(); if (foc) { const n = $(`[data-rci="attrmin:${a}"]`); n?.focus(); } }, 350); },
   search: (_, el) => { S.filters.search = el.value; clearTimeout(S._s); S._s = setTimeout(() => { draw(); const n = $('.rc-search'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); },
   clearfilters: () => { S.filters = defaultFilters(); draw(); }, togglefilters: () => { S.filtersCollapsed = !S.filtersCollapsed; draw(); },
+  showall: () => { S.filters = { ...defaultFilters(), status: 'all', round: 'all' }; draw(); },
+  dismisslost: () => { S.sessionLost = null; draw(); },
   savefilter: async () => { const name = prompt('Name this filter (e.g. "Speed CB"):'); if (!name) return; const f = { ...S.filters, stars: [...S.filters.stars] }; await api('/teams/me/filters', { method: 'POST', body: { name, filter: f } }); const r = await api('/teams/me/filters'); S.savedFilters = r.filters; toast('Filter saved', name, 'ok'); draw(); },
   loadfilter: async (id, _, e) => { const sf = S.savedFilters.find(x => x.id === +id); if (!sf) return; if (e.shiftKey) { await api(`/teams/me/filters/${id}`, { method: 'DELETE', body: {} }); S.savedFilters = S.savedFilters.filter(x => x.id !== +id); draw(); return; } S.filters = { ...defaultFilters(), ...sf.filter, stars: new Set(sf.filter.stars || []) }; draw(); },
   sort: (_, el) => { const v = el.value; if (ATTRS.includes(v)) { S.sort = { key: v, dir: 'desc', mode: S.sort.mode || 'pot' }; } else S.sort = { key: v, dir: ['rank', 'name', 'pos', 'time'].includes(v) ? 'asc' : 'desc' }; draw(); },
@@ -725,7 +770,7 @@ const ACTIONS = {
   massbid: () => massBid(), confirmmass: () => confirmMass(S.pendingMass), confirmmassvalid: () => confirmMass(S.pendingMass),
   open: id => openPlayer(+id), close: () => closeModal(),
   bid: id => openPlayer(+id),
-  reviewbid: arg => { const [id, preset] = String(arg).split('|'); const amt = preset ? +preset : Math.trunc(+$('#rc-bid-amt')?.value); const r = S.recruits.get(+id); if (!(amt > r.currentBid)) { toast('Bid too low', `Minimum bid is ${r.currentBid + 1}.`, 'err'); return; } if (!Number.isInteger(amt) || amt < 1) return; reviewBid(id, amt); },
+  reviewbid: arg => { const [id, preset] = String(arg).split('|'); const amt = preset ? +preset : Math.trunc(+$('#rc-bid-amt')?.value); const r = S.recruits.get(+id); if (!(amt >= minBidFor(r))) { toast('Bid too low', `Minimum bid is ${minBidFor(r)}${r.leader !== myTeam() && r.minRaise > 1 ? ` (bid war: the lead has changed ${r.leadChanges} times, so it takes at least +${r.minRaise} to take it)` : ''}.`, 'err', 6000); return; } if (!Number.isInteger(amt) || amt < 1) return; reviewBid(id, amt); },
   confirmbid: arg => { const [id, amt, exp] = arg.split('|'); confirmBid(+id, +amt, +exp); },
   withdraw: async id => { if (!confirm('Withdraw your leading bid? The reservation is released and the recruit returns to no-leader.')) return; try { const out = await api(`/bids/${id}/withdraw`, { method: 'POST', body: {} }); S.me.points = out.points; upsert(out.recruit); closeModal(); toast('Bid withdrawn', '', 'info'); refreshRecruit(out.recruit.id); } catch (e) { toast('Cannot withdraw', e.message, 'err'); } },
   watch: async id => { const out = await api(`/teams/me/watchlist/${id}`, { method: 'POST', body: {} }); out.watchlisted ? S.watch.add(+id) : S.watch.delete(+id); openPlayer(+id); refreshRecruit(+id); },
@@ -833,11 +878,17 @@ ACTIONS.settings = () => { if (isCommish() && S.view === 'admin') { const s = S.
   <div><label>Winning bid must stand (hours)</label><input id="rc-set-hours" type="number" step="0.5" min="0.25" value="${s.windowHours}"></div>
   <div><label>Clock resets on each new lead</label><select id="rc-set-rolling"><option value="1" ${s.rollingBids ? 'selected' : ''}>Yes — rolling 24h rule</option><option value="0" ${!s.rollingBids ? 'selected' : ''}>No — fixed deadline</option></select></div>
   <div><label>Portal Pool bid window (hours)</label><input id="rc-set-pool" type="number" step="0.5" min="0.25" value="${s.poolBidHours}"></div>
+  <div class="full" style="margin-top:6px"><h4 style="margin:0 0 2px">Bid-war escalator</h4><div class="rc-note">Two franchises trading +1 bids would each reset the clock for a single point. Once the lead has changed hands enough times, the minimum raise to take it grows and doubles: with the defaults, takeovers cost +1, +1, then +3, +3, +6, +6, +12 … (a leader raising its own bid is always +1).</div></div>
+  <div><label>Escalator</label><select id="rc-set-esc"><option value="1" ${s.escalationOn !== false ? 'selected' : ''}>On</option><option value="0" ${s.escalationOn === false ? 'selected' : ''}>Off (always +1)</option></select></div>
+  <div><label>Starts at lead change #</label><input id="rc-set-esc-after" type="number" min="2" max="50" value="${s.escalationAfter ?? 3}"></div>
+  <div><label>Minimum raise at that step</label><input id="rc-set-esc-base" type="number" min="1" max="1000" value="${s.escalationBase ?? 3}"></div>
+  <div><label>Doubles every N lead changes</label><input id="rc-set-esc-every" type="number" min="1" max="20" value="${s.escalationEvery ?? 2}"></div>
+  <div><label>Cap on minimum raise (0 = none)</label><input id="rc-set-esc-cap" type="number" min="0" max="100000" value="${s.escalationCap ?? 48}"></div>
   <div><label>Player visibility</label><select id="rc-set-vis"><option value="current" ${s.visibility === 'current' ? 'selected' : ''}>Reveal round by round</option><option value="all" ${s.visibility === 'all' ? 'selected' : ''}>Show all rounds' players</option></select></div>
   <div><label>Default allocation (new teams)</label><input id="rc-set-alloc" type="number" min="0" value="${s.defaultAllocation}"></div>
   <div><label>Allow bid withdrawal</label><select id="rc-set-wd"><option value="0" ${!s.allowWithdrawal ? 'selected' : ''}>OFF (recommended)</option><option value="1" ${s.allowWithdrawal ? 'selected' : ''}>ON</option></select></div></div>
   <p class="rc-note" style="margin-top:10px">Visibility controls what coaches see on the board and in rankings: with "round by round", players from upcoming rounds stay hidden until their round opens and the pool grows as rounds complete. The commissioner always sees everything.</p>
   <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="dosettings">Save settings</button></div></div>`, 'lg'); } else nav('settings'); };
-ACTIONS.dosettings = async () => { try { await api('/admin/seasons/current', { method: 'PATCH', body: { name: $('#rc-set-name').value, windowHours: +$('#rc-set-hours').value, rollingBids: $('#rc-set-rolling').value === '1', poolBidHours: +$('#rc-set-pool').value, visibility: $('#rc-set-vis').value, defaultAllocation: +$('#rc-set-alloc').value, allowWithdrawal: $('#rc-set-wd').value === '1' } }); closeModal(); toast('✓ Recruiting settings saved', '', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } };
+ACTIONS.dosettings = async () => { try { await api('/admin/seasons/current', { method: 'PATCH', body: { name: $('#rc-set-name').value, windowHours: +$('#rc-set-hours').value, rollingBids: $('#rc-set-rolling').value === '1', poolBidHours: +$('#rc-set-pool').value, visibility: $('#rc-set-vis').value, defaultAllocation: +$('#rc-set-alloc').value, allowWithdrawal: $('#rc-set-wd').value === '1', escalationOn: $('#rc-set-esc').value === '1', escalationAfter: +$('#rc-set-esc-after').value, escalationBase: +$('#rc-set-esc-base').value, escalationEvery: +$('#rc-set-esc-every').value, escalationCap: +$('#rc-set-esc-cap').value } }); closeModal(); toast('✓ Recruiting settings saved', '', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } };
 window.addEventListener('error', e => { if (location.hash.startsWith('#/recruiting') && String(e.filename || '').includes('recruiting')) reportClientError(e.error || e.message, 'window'); });
 function bindLogin() { $$('[data-rc-enter]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') ACTIONS[i.dataset.rcEnter](); })); $('#rc-login-pw')?.focus(); }
