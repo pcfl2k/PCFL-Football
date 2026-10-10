@@ -18,8 +18,12 @@ const App = {
 /* ----------------------------- utils ----------------------------- */
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const T = slug => App.teamMap[slug] || { slug, name: slug, nickname:'', abbr:(slug||'?').slice(0,3).toUpperCase(), colors:{primary:'#444',secondary:'#999'} };
-const logo = (slug, dark) => `assets/logos/${slug}${dark ? '-dark' : ''}.png`;
+// 2029 rebrand: same franchises, new schools. Old slugs (bookmarks, shared links, a service
+// that has not migrated yet) resolve to the new ones everywhere a slug is turned into a team.
+const LEGACY_SLUGS = { oregon: 'arizona-state', oklahoma: 'michigan-state', clemson: 'alabama' };
+const slugOf = slug => LEGACY_SLUGS[slug] || slug;
+const T = slug => App.teamMap[slugOf(slug)] || { slug, name: slug, nickname:'', abbr:(slug||'?').slice(0,3).toUpperCase(), colors:{primary:'#444',secondary:'#999'} };
+const logo = (slug, dark) => `assets/logos/${slugOf(slug)}${dark ? '-dark' : ''}.png`;
 const num = s => { const n = parseFloat(String(s).replace(/[^\d.\-]/g,'')); return isNaN(n) ? 0 : n; };
 const fmtDate = d => d || '';
 
@@ -1012,7 +1016,7 @@ VIEWS.teams = async function(){
     <div class="team-grid">${App.teams.map(t=>`
       <a class="card tcard reveal" href="#/teams/${t.slug}" style="background:linear-gradient(135deg,${t.colors.primary} 0%,#101317 130%)">
         <img class="lg" src="${logo(t.slug,true)}" onerror="this.src='${logo(t.slug)}'" alt="">
-        <div class="nm">${esc(t.name)}</div><div class="nick">${esc(t.nickname)}</div>
+        <div class="nm">${esc(t.name)}<span data-coach-slot="${t.slug}" data-variant="cpu"></span></div><div class="nick">${esc(t.nickname)}</div>
         <div class="rec">${rankChip(ranks,t.slug)}${wk.records[t.slug]||'0-0'} · ${esc(t.conference)} ${esc(t.division)}</div>
       </a>`).join('')}
     </div>`;
@@ -1072,8 +1076,9 @@ VIEWS.team = async function(slug){
   return `
     <div class="team-hero reveal" style="background:linear-gradient(120deg,${t.colors.primary} 0%,#0d0f13 90%)">
       <img class="lg" src="${logo(slug,true)}" onerror="this.src='${logo(slug)}'" alt="">
-      <div style="flex:1;min-width:0"><div class="nm">${esc(t.name)} ${esc(t.nickname)}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${esc(t.name)} ${esc(t.nickname)}<span data-coach-slot="${slug}" data-variant="badge"></span></div>
         <div class="meta">
+          <span data-coach-slot="${slug}" data-variant="meta"></span>
           <span>Record <b>${wk.records[slug]||'0-0'}</b></span>
           ${ranks[slug]?`<span>Power Poll <b>#${ranks[slug]}</b></span>`:''}
           ${standLine?`<span>${esc(standLine.div)} <b>${['1st','2nd','3rd','4th','5th'][standLine.pos-1]}</b></span><span>PF <b>${standLine.pf}</b></span><span>PA <b>${standLine.pa}</b></span><span>Streak <b>${esc(standLine.streak)}</b></span>`:''}
@@ -2132,7 +2137,23 @@ VIEWS.podcast = async function(){
 window.setWeek = w => { App.week = w; renderChrome(); renderTicker(); };
 
 /* ============================ router ============================= */
+/* Links that still carry a pre-2029 slug (#/teams/oregon, #/game/2028/3/oregon-texas,
+   #/compare?a=oklahoma&b=...) are rewritten in place to the new school before routing. */
+function legacyHash(hash){
+  if (!hash || !/oregon|oklahoma|clemson/.test(hash)) return null;
+  const [path, qs] = hash.replace(/^#\/?/, '').split('?');
+  const seg = path.split('/').map(x => x.replace(/(^|-)(oregon|oklahoma|clemson)(?=-|$)/g, (m, pre, old) => pre + LEGACY_SLUGS[old]));
+  let out = '#/' + seg.join('/');
+  if (qs !== undefined) {
+    const q = new URLSearchParams(qs);
+    for (const [k, v] of [...q]) if (LEGACY_SLUGS[v]) q.set(k, LEGACY_SLUGS[v]);
+    out += '?' + q.toString();
+  }
+  return out !== hash ? out : null;
+}
 async function route(){
+  const legacy = legacyHash(location.hash);
+  if (legacy) history.replaceState(null, '', legacy);
   const hash = location.hash || '#/';
   const [pathPart, queryPart] = hash.slice(2).split('?');
   const q = new URLSearchParams(queryPart || '');
@@ -2163,9 +2184,149 @@ async function route(){
   revealInit(main); animateWidths(main);
   main.querySelectorAll('[data-count]').forEach(n => countUp(n, +n.dataset.count));
   setupFightSong();
+  hydrateCoachSlots(main);
   window.scrollTo({ top: 0 });
 }
 
+
+/* ----------------------------- coaches ----------------------------- */
+/* Head-coach directory. Source of truth is the Recruitment Center service
+   (GET {apiBase}/coaches): first names + CPU/commissioner flags are public; coach
+   emails come back only when the request carries a valid Recruitment Center sign-in
+   (the same token the Recruiting page stores). If the service is unreachable the site
+   falls back to data/coaches.json (first names + flags only, never emails). */
+const COACH_TOKEN_KEY = 'pcfl-rc-token';
+const coachTokenNow = () => { try { return localStorage.getItem(COACH_TOKEN_KEY) || null; } catch { return null; } };
+const coachFirst = n => String(n ?? '').trim().split(/\s+/)[0] || ''; // first name only, never a surname
+let _coaches = null; // { token, promise }
+
+function normalizeCoaches(list, emailsVisible, source){
+  const map = {};
+  for (const c of list || []) {
+    const slug = slugOf(c.team);
+    if (!slug) continue;
+    const email = emailsVisible && typeof c.email === 'string' && /^[^\s@<>"']+@[^\s@<>"']+$/.test(c.email) ? c.email : null;
+    map[slug] = { slug, first: coachFirst(c.coachFirstName), cpu: !!c.cpu, commissioner: !!c.commissioner, email };
+  }
+  return { source, emailsVisible: !!emailsVisible, map };
+}
+async function coachesFromService(token){
+  const base = window.PCFL_RECRUITING?.apiBase;
+  if (!base || /REPLACE-WITH/i.test(base)) throw new Error('Recruitment Center not configured');
+  const get = auth => fetch(base + '/coaches', { headers: auth ? { Authorization: `Bearer ${auth}` } : {}, cache: 'no-store', signal: AbortSignal.timeout(6000) });
+  let r = await get(token);
+  if (r.status === 401 && token) r = await get(null); // stale sign-in: read the public directory instead
+  if (!r.ok) throw new Error(`coach directory ${r.status}`);
+  const j = await r.json();
+  const body = Array.isArray(j?.coaches) ? j : j?.data;
+  if (!Array.isArray(body?.coaches)) throw new Error('unexpected coach directory payload');
+  return normalizeCoaches(body.coaches, body.emailsVisible, 'service');
+}
+const coachesFromBundle = async () => normalizeCoaches((await getJSON('data/coaches.json')).coaches, false, 'bundle');
+/** Memoized per sign-in token, so signing in on the Recruiting page shows emails here without a reload. */
+function loadCoaches(){
+  const token = coachTokenNow();
+  if (!_coaches || _coaches.token !== token) {
+    const promise = coachesFromService(token).catch(e => { console.warn('coach directory: bundled fallback -', e.message); return coachesFromBundle(); });
+    _coaches = { token, promise };
+    promise.catch(() => { if (_coaches?.promise === promise) _coaches = null; });
+  }
+  return _coaches.promise;
+}
+
+const COACH_BADGE = {
+  cpu: `<span class="coach-badge cpu" title="Computer-controlled program">CPU</span>`,
+  commish: `<span class="coach-badge commish" title="League commissioner">Commissioner</span>`,
+};
+const coachBadges = c => c ? (c.cpu ? COACH_BADGE.cpu : '') + (c.commissioner ? COACH_BADGE.commish : '') : '';
+function coachSlotHTML(c, variant){
+  if (!c) return '';
+  if (variant === 'badge') return coachBadges(c);
+  if (variant === 'cpu') return c.cpu ? COACH_BADGE.cpu : '';
+  if (variant === 'meta') return c.cpu ? `Head Coach <b>CPU</b>` : `Head Coach <b>${c.first ? esc(c.first) : 'TBA'}</b>`;
+  return '';
+}
+/** Fill [data-coach-slot] placeholders (and the coaches page grid): bundled data first, then the live directory. */
+function hydrateCoachSlots(root){
+  const slots = [...root.querySelectorAll('[data-coach-slot]')];
+  if (!slots.length && !root.querySelector('[data-coaches-root]')) return;
+  let live = false;
+  const fill = d => {
+    for (const el of slots) if (el.isConnected) el.innerHTML = coachSlotHTML(d.map[slugOf(el.dataset.coachSlot)], el.dataset.variant);
+    const page = root.querySelector('[data-coaches-root]');
+    if (page && page.dataset.source !== d.source) {
+      page.outerHTML = coachesGridHTML(d);
+      root.querySelectorAll('[data-coaches-root] .reveal').forEach(n => n.classList.add('in'));
+    }
+  };
+  loadCoaches().then(d => { live = true; fill(d); }).catch(() => {});
+  coachesFromBundle().then(d => { if (!live) fill(d); }).catch(() => {});
+}
+
+const LOCK_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 8V7a3 3 0 1 1 6 0v3H9z"/></svg>`;
+const MAIL_SVG = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm1 2.4V17h16V7.4l-8 5.3-8-5.3zM5.8 7l6.2 4.1L18.2 7H5.8z"/></svg>`;
+
+function coachCardHTML(t, c){
+  c = c || { first: '', cpu: false, commissioner: false, email: null };
+  const name = c.cpu
+    ? `<span class="cc-first cc-muted">CPU Controlled</span>`
+    : c.first ? `<span class="cc-first">${esc(c.first)}</span>` : `<span class="cc-first cc-muted">Coach TBA</span>`;
+  return `<article class="coach-card reveal${c.cpu ? ' is-cpu' : ''}${c.commissioner ? ' is-commish' : ''}" style="--c1:${esc(t.colors.primary)};--c2:${esc(t.colors.secondary)}">
+    <a class="cc-top" href="#/teams/${t.slug}" title="${esc(t.name)} team page">
+      <img class="cc-wm" src="${logo(t.slug, true)}" onerror="this.src='${logo(t.slug)}'" alt="">
+      <span class="cc-team">${esc(t.name)}</span>
+      <span class="cc-nick">${esc(t.nickname)} · ${esc(t.abbr)}</span>
+    </a>
+    <div class="cc-body">
+      <div class="cc-label"><span>Head Coach</span>${coachBadges(c)}</div>
+      <div class="cc-coach"><img class="cc-logo" src="${logo(t.slug)}" alt="${esc(t.name)}">${name}</div>
+      <div class="cc-meta">${esc(t.conference)} Conference · ${esc(t.division)} Division</div>
+      ${c.email ? `<a class="cc-email" href="mailto:${esc(c.email)}">${MAIL_SVG}<span>${esc(c.email)}</span></a>` : ''}
+    </div>
+  </article>`;
+}
+function coachesGridHTML(d){
+  const note = d.source !== 'service'
+    ? `<div class="coaches-note">${LOCK_SVG}<span>The live coach directory is unavailable right now, so this is the league's published list.</span></div>`
+    : d.emailsVisible ? ''
+    : `<a class="coaches-note" href="#/recruiting">${LOCK_SVG}<span>Sign in to the Recruitment Center to see coach emails</span><b>Sign in →</b></a>`;
+  const confs = [...new Set(App.teams.map(t => t.conference))];
+  return `<div data-coaches-root data-source="${d.source}">${note}${confs.map(conf => {
+    const teams = App.teams.filter(t => t.conference === conf);
+    const divs = [...new Set(teams.map(t => t.division))];
+    return `<div class="section-h"><span class="bar"></span><h2>${esc(conf)} Conference</h2><span class="sub">${divs.map(esc).join(' · ')}</span></div>
+      ${divs.map(dv => `<div class="coaches-div"><span>${esc(dv)} Division</span></div>
+      <div class="coach-grid">${teams.filter(t => t.division === dv).map(t => coachCardHTML(t, d.map[t.slug])).join('')}</div>`).join('')}`;
+  }).join('')}</div>`;
+}
+
+VIEWS.coaches = async function(){
+  // Render with whichever answers first: the live directory, or the bundled list after a
+  // short wait. hydrateCoachSlots() swaps the live directory in when it arrives.
+  const d = await Promise.race([
+    loadCoaches(),
+    new Promise(res => setTimeout(res, 1500)).then(coachesFromBundle),
+  ]);
+  const all = Object.values(d.map);
+  const humans = all.filter(c => !c.cpu).length, cpus = all.filter(c => c.cpu).length;
+  const commish = all.find(c => c.commissioner);
+  return `<div class="coaches-page">
+    <div class="hero coaches-hero reveal" style="--hero-a:#d6001c;--hero-b:#1c2027">
+      <div class="bg"></div><div class="grid-lines"></div><div class="sheen"></div>
+      <div class="chyron"><span class="dot"></span> PCFL Network · Head Coaches</div>
+      <div class="coaches-hero-inner">
+        <div class="tname">The Coaches</div>
+        <div class="tsub">${App.teams.length} programs · 2 conferences · the people calling the plays</div>
+        <div class="coaches-stats">
+          <div><b>${humans}</b><span>League coaches</span></div>
+          <div><b>${cpus}</b><span>CPU programs</span></div>
+          ${commish ? `<div class="cs-commish"><img src="${logo(commish.slug, true)}" onerror="this.src='${logo(commish.slug)}'" alt=""><span><b>${esc(commish.first || 'TBA')}</b><span>Commissioner · ${esc(T(commish.slug).name)}</span></span></div>` : ''}
+        </div>
+      </div>
+    </div>
+    ${coachesGridHTML(d)}
+  </div>`;
+};
 
 /* ---------------------------- recruiting ---------------------------- */
 /* The Recruitment Center is a separately-hosted service with its own UI
