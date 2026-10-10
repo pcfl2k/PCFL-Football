@@ -21,16 +21,16 @@ const TEAMS = [
   t('washington','Washington','Huskies','UW','#4B2E83','#B7A57A','Western','Pacific',['WASH','WAS']),
   t('usc','USC','Trojans','USC','#990000','#FFCC00','Western','Pacific',[]),
   t('ucla','UCLA','Bruins','UCLA','#2D68C4','#F2A900','Western','Pacific',['UCL']),
-  t('oregon','Oregon','Ducks','UO','#154733','#FEE123','Western','Pacific',['ORE','OR']),
+  t('arizona-state','Arizona State','Sun Devils','ASU','#8C1D40','#FFC627','Western','Pacific',['ARIZONA ST','ARIZ ST','AZ STATE','OREGON','UO','ORE','OR']), // formerly Oregon (2029 rebrand)
   t('ohio-state','Ohio State','Buckeyes','OSU','#BB0000','#A7B1B7','Western','Central',[]),
   t('notre-dame','Notre Dame','Fighting Irish','ND','#0C2340','#C99700','Western','Central',[]),
   t('colorado','Colorado','Buffaloes','COL','#CFB87C','#000000','Western','Central',['COLO']),
-  t('oklahoma','Oklahoma','Sooners','OU','#841617','#FDF9D8','Western','Central',['OKL']),
+  t('michigan-state','Michigan State','Spartans','MSU','#18453B','#FFFFFF','Western','Central',['MICHIGAN ST','MICH ST','OKLAHOMA','OU','OKL']), // formerly Oklahoma
   t('michigan','Michigan','Wolverines','MICH','#00274C','#FFCB05','Western','Central',['MIC']),
   t('texas','Texas','Longhorns','TEX','#BF5700','#FFFFFF','Eastern','Atlantic',[]),
   t('penn-state','Penn State','Nittany Lions','PSU','#041E42','#FFFFFF','Eastern','Atlantic',['PENNST','PENN ST']),
   t('boston-college','Boston College','Eagles','BC','#98002E','#BC9B6A','Eastern','Atlantic',['BOSTON COLLEG']),
-  t('clemson','Clemson','Tigers','CLEM','#F56600','#522D80','Eastern','Atlantic',['CLE']),
+  t('alabama','Alabama','Crimson Tide','ALA','#9E1B32','#828A8F','Eastern','Atlantic',['BAMA','CLEMSON','CLEM','CLE']), // formerly Clemson
   t('lsu','LSU','Tigers','LSU','#461D7C','#FDD023','Eastern','Southern',[]),
   t('tennessee','Tennessee','Volunteers','TENN','#FF8200','#58595B','Eastern','Southern',['TEN']),
   t('arkansas','Arkansas','Razorbacks','ARK','#9D2235','#FFFFFF','Eastern','Southern',[]),
@@ -49,16 +49,16 @@ const FIGHT_SONGS = {
   washington:       { youtubeId:'xN2HTCmpeV4', name:'Bow Down to Washington',           start:0,  end:22 },
   usc:              { youtubeId:'cj7IYSv_BVE', name:'Conquest',                          start:0,  end:22 },
   ucla:             { youtubeId:'Mi1rc1zGEQM', name:'Sons of Westwood / Mighty Bruins',  start:0,  end:22 },
-  oregon:           { youtubeId:'sf6wT7nn8i8', name:'Mighty Oregon',                     start:0,  end:22 },
+  'arizona-state':  null, // TODO(rebrand): official fight song
   'ohio-state':     { youtubeId:'uDI1qWHqJt4', name:'Buckeye Battle Cry',                start:0,  end:22 },
   'notre-dame':     { youtubeId:'clNTdf8xAtk', name:'Notre Dame Victory March',          start:0,  end:22 },
   colorado:         { youtubeId:'jcTOBFq-2T0', name:'CU Fight Song',                     start:0,  end:22 },
-  oklahoma:         { youtubeId:'5ErtzJSUiQY', name:'Boomer Sooner',                     start:0,  end:22 },
+  'michigan-state': null, // TODO(rebrand): official fight song
   michigan:         { youtubeId:'Oww_gtVVqkQ', name:'The Victors',                       start:0,  end:22 },
   texas:            { youtubeId:'W41tB1nkQtI', name:'The Eyes of Texas',                 start:0,  end:22 },
   'penn-state':     { youtubeId:'wLIuF9E6gcQ', name:'Fight On, State',                   start:0,  end:22 },
   'boston-college': { youtubeId:'qBwkc-x8dYs', name:'For Boston',                        start:0,  end:22 },
-  clemson:          { youtubeId:'tGl_XIGlhfw', name:'Tiger Rag',                         start:0,  end:22 },
+  alabama:          null, // TODO(rebrand): official fight song
   lsu:              { youtubeId:'YZ4e35_hdjE', name:'Hey Fightin’ Tigers',          start:0,  end:22 },
   tennessee:        { youtubeId:'ylc2FxBLvz4', name:'Rocky Top',                         start:0,  end:22 },
   arkansas:         { youtubeId:'0hJMyTBFJnI', name:'Arkansas Fight',                    start:0,  end:22 },
@@ -67,13 +67,15 @@ const FIGHT_SONGS = {
 };
 const ALIAS = new Map();
 for (const tm of TEAMS) for (const a of tm.aliases) ALIAS.set(a, tm.slug);
+// longest alias first, so a truncated "MICHIGAN ST" never prefix-matches "MICHIGAN"
+const ALIAS_BY_LEN = [...ALIAS].sort((x, y) => y[0].length - x[0].length);
 
 function teamFrom(text){
   if (!text) return null;
   const up = text.trim().toUpperCase().replace(/\s+/g,' ');
   if (ALIAS.has(up)) return ALIAS.get(up);
   // prefix match handles truncated names like "Boston Colleg"
-  for (const [a, slug] of ALIAS) {
+  for (const [a, slug] of ALIAS_BY_LEN) {
     if (a.length >= 3 && (a.startsWith(up) || up.startsWith(a))) return slug;
   }
   return null;

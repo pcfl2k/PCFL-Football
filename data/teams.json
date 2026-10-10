@@ -69,28 +69,27 @@
   }
  },
  {
-  "slug": "oregon",
-  "name": "Oregon",
-  "nickname": "Ducks",
-  "abbr": "UO",
+  "slug": "arizona-state",
+  "name": "Arizona State",
+  "nickname": "Sun Devils",
+  "abbr": "ASU",
   "colors": {
-   "primary": "#154733",
-   "secondary": "#FEE123"
+   "primary": "#8C1D40",
+   "secondary": "#FFC627"
   },
   "conference": "Western",
   "division": "Pacific",
   "aliases": [
+   "ARIZONA STATE",
+   "ASU",
+   "ARIZONA ST",
+   "ARIZ ST",
+   "AZ STATE",
    "OREGON",
    "UO",
    "ORE",
    "OR"
-  ],
-  "fightSong": {
-   "youtubeId": "sf6wT7nn8i8",
-   "name": "Mighty Oregon",
-   "start": 0,
-   "end": 22
-  }
+  ]
  },
  {
   "slug": "ohio-state",
@@ -160,27 +159,25 @@
   }
  },
  {
-  "slug": "oklahoma",
-  "name": "Oklahoma",
-  "nickname": "Sooners",
-  "abbr": "OU",
+  "slug": "michigan-state",
+  "name": "Michigan State",
+  "nickname": "Spartans",
+  "abbr": "MSU",
   "colors": {
-   "primary": "#841617",
-   "secondary": "#FDF9D8"
+   "primary": "#18453B",
+   "secondary": "#FFFFFF"
   },
   "conference": "Western",
   "division": "Central",
   "aliases": [
+   "MICHIGAN STATE",
+   "MSU",
+   "MICHIGAN ST",
+   "MICH ST",
    "OKLAHOMA",
    "OU",
    "OKL"
-  ],
-  "fightSong": {
-   "youtubeId": "5ErtzJSUiQY",
-   "name": "Boomer Sooner",
-   "start": 0,
-   "end": 22
-  }
+  ]
  },
  {
   "slug": "michigan",
@@ -275,27 +272,24 @@
   }
  },
  {
-  "slug": "clemson",
-  "name": "Clemson",
-  "nickname": "Tigers",
-  "abbr": "CLEM",
+  "slug": "alabama",
+  "name": "Alabama",
+  "nickname": "Crimson Tide",
+  "abbr": "ALA",
   "colors": {
-   "primary": "#F56600",
-   "secondary": "#522D80"
+   "primary": "#9E1B32",
+   "secondary": "#828A8F"
   },
   "conference": "Eastern",
   "division": "Atlantic",
   "aliases": [
+   "ALABAMA",
+   "ALA",
+   "BAMA",
    "CLEMSON",
    "CLEM",
    "CLE"
-  ],
-  "fightSong": {
-   "youtubeId": "tGl_XIGlhfw",
-   "name": "Tiger Rag",
-   "start": 0,
-   "end": 22
-  }
+  ]
  },
  {
   "slug": "lsu",
