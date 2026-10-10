@@ -248,8 +248,10 @@ async function draw() {
 }
 const safe = fn => { try { return fn(); } catch { return null; } };
 function roundCeremony(round, count) {
-  const stars = round.type === 'PORTAL' ? '' : (round.name.match(/(\d)-Star/) || [])[1];
-  const label = round.type === 'PORTAL' ? 'PORTAL PLAYERS' : (stars ? `${stars}-STAR RECRUITS` : round.name.toUpperCase());
+  // star count only for single-tier rounds ("5-Star"); combined rounds ("3, 2 & 1-Star") use their name
+  const single = round.type === 'PORTAL' ? null : round.name.match(/—\s*(\d)-Star/);
+  const stars = single ? single[1] : '';
+  const label = round.type === 'PORTAL' ? 'TRANSFER PORTAL · WALK-ONS' : (stars ? `${stars}-STAR RECRUITS` : (round.name.split('—')[1] || round.name).trim().toUpperCase());
   const n = count ?? [...S.recruits.values()].filter(r => r.roundId === round.id).length;
   const ov = document.createElement('div'); ov.className = 'rc-rstart';
   ov.innerHTML = `<div class="lines"></div><div class="box"><div class="k">PCFL Recruiting · ${esc(S.state.season?.year || '')}</div>${stars ? `<div class="stars">${'★'.repeat(+stars)}</div>` : ''}<div class="big">ROUND ${round.number}</div><div class="sub">${esc(label)} · NOW OPEN</div><div class="bar"></div><div class="meta">${n} players on the board · started ${fmtDate(round.startedAt)} · ${round.closeMode === 'after-hours' ? `closes after ${round.closeAfterHours}h` : 'a winning bid must stand ' + (round.windowHours || S.state.season?.windowHours) + 'h'}</div></div>`;
@@ -732,7 +734,7 @@ async function adminHTML() {
 }
 function importWizard() {
   modal(`<div class="rc-mhead"><div><h3>Import recruits</h3><div class="m"><span>.xls · .xlsx · .csv — the PCFL recruit workbook is supported as-is</span></div></div><button class="x" data-rc="close">×</button></div>
-    <div class="rc-mbody rc-import" id="rc-import"><div class="drop" id="rc-drop"><b>Drop the recruit workbook here</b>or click to choose a file<input type="file" id="rc-file" accept=".xls,.xlsx,.csv" style="display:none"></div><div class="rc-note" style="margin-top:10px">Only the first sheet is imported by default (other tabs, e.g. CPU allocations, are ignored unless you pick them). Rows are validated before anything is written; recruits are assigned to rounds by star rating (5★ → Round 1 … 1★ → Round 5) unless you choose a round.</div></div>`, 'lg');
+    <div class="rc-mbody rc-import" id="rc-import"><div class="drop" id="rc-drop"><b>Drop the recruit workbook here</b>or click to choose a file<input type="file" id="rc-file" accept=".xls,.xlsx,.csv" style="display:none"></div><div class="rc-note" style="margin-top:10px">Only the first sheet is imported by default (other tabs, e.g. CPU allocations, are ignored unless you pick them). Rows are validated before anything is written; recruits are assigned to rounds by star rating (5★ → Round 1, 4★ → Round 2, 3★/2★/1★ → Round 3; unsigned players move to Round 4, the Transfer Portal / Walk-ons) unless you choose a round.</div></div>`, 'lg');
   const drop = $('#rc-drop'), file = $('#rc-file');
   drop.addEventListener('click', () => file.click());
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); }); drop.addEventListener('dragleave', () => drop.classList.remove('over'));
@@ -847,7 +849,7 @@ const ACTIONS = {
     const r = id === 'new' ? { name: '', number: (S.adminData.rounds.length || 0) + 1, type: 'STAR', startMode: 'auto', startAfterHours: null, closeMode: 'all-resolved', closeAfterHours: null, windowHours: null, rolling: null, unbidToPool: false, status: 'DRAFT' } : S.adminData.rounds.find(x => x.id === +id);
     const started = !['DRAFT', 'SCHEDULED'].includes(r.status);
     modal(`<div class="rc-mhead"><div><h3>${id === 'new' ? 'New round' : 'Round settings'}</h3><div class="m"><span>${esc(r.name || '')} ${started ? '· in progress — timing rules still apply live' : ''}</span></div></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><div class="rc-roundform">
-      <div class="full"><label>Name</label><input id="rc-r-name" value="${esc(r.name)}" placeholder="Round 6 — Portal Players"></div>
+      <div class="full"><label>Name</label><input id="rc-r-name" value="${esc(r.name)}" placeholder="Round 4 — Transfer Portal / Walk-ons"></div>
       <div><label>Order #</label><input id="rc-r-number" type="number" min="1" max="99" value="${r.number}"></div>
       <div><label>Type</label><select id="rc-r-type"><option value="STAR" ${r.type === 'STAR' ? 'selected' : ''}>Star recruits</option><option value="PORTAL" ${r.type === 'PORTAL' ? 'selected' : ''}>Portal players</option></select></div>
       <div><label>Starts</label><select id="rc-r-startmode"><option value="manual" ${r.startMode === 'manual' ? 'selected' : ''}>Manually (commissioner)</option><option value="auto" ${r.startMode === 'auto' ? 'selected' : ''}>Automatically</option></select></div>
