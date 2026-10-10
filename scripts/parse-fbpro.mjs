@@ -9,6 +9,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gameNarrative, narrativeText, seasonContextText, previewContextText, numbersNotIn } from './ai-context.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DROPS = join(ROOT, 'drops');
@@ -660,7 +661,8 @@ const AI = (() => {
   if (relayUrl && relayTok) return {
     provider: 'ollama',
     apiKey: relayTok,
-    model: process.env.PCFL_AI_MODEL || 'qwen2.5:3b',
+    model: process.env.PCFL_AI_MODEL || 'nemotron-3-ultra:cloud',
+    editorModel: process.env.PCFL_AI_EDITOR_MODEL || 'nemotron-3-super:cloud',
     endpoint: relayUrl + '/ai/chat',
     enabled: true,
   };
@@ -772,10 +774,17 @@ let relayChain = Promise.resolve();   // the VPS model runs one generation at a 
 async function callClaude(prompt, opts = {}){
   if (!AI.enabled) return null;
   const keyFor = (provider, model) => createHash('sha256').update(provider + '\n' + model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
-  const cacheFile = join(aiCacheDir(opts.season || 'global'), keyFor(AI.provider, AI.model) + '.json');
+  // v2 prompts (grounded in play-by-play + season stats) are cached by prompt only, so
+  // switching AI providers/models never throws away or regenerates finished writing.
+  const { validate, ...keyOpts } = opts;
+  const v2Key = createHash('sha256').update('pcfl-ai-v2\n' + JSON.stringify(keyOpts) + '\n' + prompt).digest('hex').slice(0, 16);
+  const cacheFile = join(aiCacheDir(opts.season || 'global'), (opts.v2 ? v2Key : keyFor(AI.provider, AI.model)) + '.json');
+  if (opts.v2 && existsSync(cacheFile)){
+    try { const hit = JSON.parse(readFileSync(cacheFile, 'utf8')); AI_STATS.cached++; return hit; } catch {}
+  }
   // Reuse content already written for the same prompt by any provider (the existing
   // Claude Haiku recaps stay; only genuinely new prompts are generated).
-  for (const [prov, model] of [[AI.provider, AI.model], ...LEGACY_AI.filter(([p, m]) => p !== AI.provider || m !== AI.model)]){
+  for (const [prov, model] of (opts.v2 ? [] : [[AI.provider, AI.model], ...LEGACY_AI.filter(([p, m]) => p !== AI.provider || m !== AI.model)])){
     const f = join(aiCacheDir(opts.season || 'global'), keyFor(prov, model) + '.json');
     if (existsSync(f)){
       try { const hit = JSON.parse(readFileSync(f, 'utf8')); AI_STATS.cached++; return hit; } catch {}
@@ -784,6 +793,37 @@ async function callClaude(prompt, opts = {}){
   if (AI_STATS.fatal || AI_CACHE_ONLY){ AI_STATS.skipped++; return null; }
   mkdirSync(aiCacheDir(opts.season || 'global'), { recursive: true });
 
+  let feedback = '';
+  for (let attempt = 0; attempt < (validate ? 2 : 1); attempt++){
+    let result = await aiRequest(prompt + feedback, opts);
+    if (!result) return null;
+    const problems = validate ? validate(result) : [];
+    if (problems.length && attempt === 0){
+      console.warn(`AI draft rejected (${problems.join('; ').slice(0, 160)}) — asking for a corrected rewrite`);
+      feedback = `\n\nYOUR PREVIOUS DRAFT WAS REJECTED: ${problems.join('; ')}. Rewrite it using ONLY facts and numbers that appear in the data above.`;
+      continue;
+    }
+    if (problems.length) { console.warn(`AI draft still has issues after rewrite: ${problems.join('; ').slice(0, 160)} — discarded`); AI_STATS.failed++; return null; }
+    let final = result;
+    if (opts.edit && AI.provider === 'ollama'){
+      // Copy-desk pass: a second model checks every claim in the draft against the same data
+      // and fixes what is unsupported (wrong counts, wrong attribution, contradictions).
+      const editPrompt = `${prompt}\n\n---\nDRAFT TO FACT-CHECK (JSON):\n${JSON.stringify(result)}\n\nYou are the copy desk. Check every sentence of the draft against the data above. Fix anything not supported by the data: wrong counts (e.g. touchdowns credited to the wrong player or totals the data does not give), wrong attributions, wrong period/clock, contradictions (e.g. calling 50% "perfect"), or invented details. Keep the voice, structure and length; change only what is wrong. Return the corrected draft as JSON in exactly the same shape.`;
+      const edited = await aiRequest(editPrompt, { ...opts, model: AI.editorModel, temperature: 0.2 });
+      const editProblems = edited ? (validate ? validate(edited) : []) : ['no reply'];
+      if (edited && !editProblems.length) final = edited;
+      else console.warn(`  copy-desk pass skipped (${editProblems.join('; ').slice(0, 120)}); keeping the checked draft`);
+    }
+    result = final;
+    writeFileSync(cacheFile, JSON.stringify(result));
+    AI_STATS.generated++;
+    return result;
+  }
+  return null;
+}
+
+/** One model call (no caching). Returns parsed JSON / {text}, or null. */
+async function aiRequest(prompt, opts = {}){
   // For JSON-mode prompts, stress the constraint at the end — open models
   // need the reminder more than Claude does.
   const userContent = opts.parseJSON
@@ -795,7 +835,7 @@ async function callClaude(prompt, opts = {}){
     fetchOpts = {
       method: 'POST',
       headers: { 'x-pcfl-ai-token': AI.apiKey, 'content-type': 'application/json' },
-      body: JSON.stringify({ system: opts.system || '', prompt: userContent, json: !!opts.parseJSON, maxTokens: opts.maxTokens || 1500, temperature: 0.7 }),
+      body: JSON.stringify({ system: opts.system || '', prompt: userContent, json: !!opts.parseJSON, maxTokens: opts.maxTokens || 1500, temperature: opts.temperature ?? 0.7, model: opts.model || AI.model }),
       signal: AbortSignal.timeout(600000),
     };
   } else if (AI.provider === 'anthropic'){
@@ -857,8 +897,6 @@ async function callClaude(prompt, opts = {}){
     } else {
       result = { text };
     }
-    writeFileSync(cacheFile, JSON.stringify(result));
-    AI_STATS.generated++;
     return result;
   } catch (e){
     console.warn(`AI fetch error: ${e.message}`);
@@ -866,6 +904,15 @@ async function callClaude(prompt, opts = {}){
   }
 }
 
+const SYS_BROADCAST_V2 =
+  'You are the lead play-by-play voice and analyst of the PCFL Network, writing the definitive recap the morning after. ' +
+  'Write with live-broadcast energy in the big moments (vivid verbs, the clock, the down and distance, the score) and an analyst\'s ' +
+  'perspective in between: what the numbers say, how this game fits the season, what it means next. Specific, never generic; ' +
+  'confident, never hyperbolic. Plain prose, no markdown, no emoji, no headers inside paragraphs. ' +
+  'ACCURACY IS NON-NEGOTIABLE: use only facts, names and numbers present in the data you are given. Never invent plays, quarters, ' +
+  'scores, yardages, streaks, injuries, crowd details or quotes. When a fact is not in the data, leave it out. ' +
+  'The PCFL is a self-contained simulation league: never name real-world coaches, conferences, bowls, networks or media personalities, ' +
+  'and say "the staff" rather than naming any coach.';
 const SYS_BROADCAST =
   'You are a veteran college football broadcast analyst writing for the PCFL Network. ' +
   'Voice: confident, observant, occasional flair, never hyperbolic. ' +
@@ -880,6 +927,16 @@ const SYS_BROADCAST =
   'you need to refer to coaching, say "the staff" or "the coaching room" — never a ' +
   'specific name.';
 
+const FORMER_NAMES = { Oregon: 'Arizona State', Oklahoma: 'Michigan State', Clemson: 'Alabama' };
+const logTeamName = n => FORMER_NAMES[n] || (TEAMS.find(t => t.slug === teamFrom(n))?.name) || n;
+const teamName2 = slug => TEAMS.find(t => t.slug === slug)?.name || slug;
+/** Facts the writing is checked against: rejects multi-digit numbers that are not in the data. */
+const numberGuard = (data, fields) => out => {
+  const text = fields.map(f => JSON.stringify(out?.[f] ?? '')).join(' ');
+  const bad = numbersNotIn(text, data);
+  return bad.length ? [`numbers not in the data: ${bad.slice(0, 8).join(', ')}`] : [];
+};
+
 function teamCtx(slug, records, ranks){
   const t = TEAMS.find(x => x.slug === slug);
   if (!t) return null;
@@ -887,7 +944,7 @@ function teamCtx(slug, records, ranks){
 }
 
 /* -------------------- AI preview (pre-sim) ----------------------- */
-async function aiPreview(game, week, season, records, ranks, recent){
+async function aiPreview(game, week, season, records, ranks, recent, cur = null){
   const A = teamCtx(game.away, records, ranks);
   const H = teamCtx(game.home, records, ranks);
   if (!A || !H) return null;
@@ -897,7 +954,7 @@ Game: ${A.name} (${A.record}${A.rank?`, ranked #${A.rank}`:''}) at ${H.name} (${
 
 Recent ${A.name} results: ${(recent[game.away]||[]).map(r=>`${r.opp} ${r.result} ${r.score}`).join('; ') || 'season opener'}.
 Recent ${H.name} results: ${(recent[game.home]||[]).map(r=>`${r.opp} ${r.result} ${r.score}`).join('; ') || 'season opener'}.
-
+${cur ? '\n' + previewContextText(game.away, game.home, cur, teamName2) + '\n\nBuild the preview on these season numbers: the strength-on-strength matchups, each side\'s scoring and yardage per game, and the players who lead the PCFL. Use only numbers from the data.\n' : ''}
 Return ONLY JSON in this exact shape:
 {
   "headline": "8-12 word headline",
@@ -907,12 +964,14 @@ Return ONLY JSON in this exact shape:
   "keyMatchup": "one sentence on the chess-match angle",
   "body": ["paragraph 1 (2-3 sentences)", "paragraph 2 (2-3 sentences)"]
 }`;
-  const r = await callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 900, season });
+  const r = cur
+    ? await callClaude(prompt, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 1100, season, v2: true, validate: numberGuard(prompt, ['headline', 'subhead', 'xFactor', 'keyMatchup', 'body']) })
+    : await callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 900, season });
   return r;
 }
 
 /* -------------------- AI recap (post-sim) ------------------------ */
-async function aiRecap(game, week, season){
+async function aiRecap(game, week, season, ctx = null){
   const aw = game.away, hm = game.home;
   const ts = Object.fromEntries(game.teamStats.map(r => [r.label, r]));
   const A = TEAMS.find(x => x.slug === aw.team), H = TEAMS.find(x => x.slug === hm.team);
@@ -931,6 +990,56 @@ async function aiRecap(game, week, season){
   };
   const tA = top('away'), tH = top('home');
   const fmt = (p, kind) => p ? `${p.name}: ${kind==='pass'?`${p.vals[1]}/${p.vals[0]}, ${p.vals[2]} yds, ${p.vals[5]} TD`:kind==='rush'?`${p.vals[0]} car, ${p.vals[1]} yds, ${p.vals[4]} TD`:kind==='recv'?`${p.vals[0]} rec, ${p.vals[1]} yds, ${p.vals[4]} TD`:`${p.vals[0]} tkl, ${p.vals[1]} sk`}` : 'n/a';
+
+  if (ctx?.cur){
+    const n = ctx.narrative;
+    const facts = [
+      `BOX SCORE`,
+      `Final: ${A.name} ${aw.score}, ${H.name} ${hm.score}. Winner: ${winner.name}.`,
+      `Total yards: ${A.name} ${ts['TOTAL NET YARDS']?.away ?? '?'}, ${H.name} ${ts['TOTAL NET YARDS']?.home ?? '?'}. Rushing: ${A.name} ${ts['NET RUSHING YARDS']?.away ?? '?'}, ${H.name} ${ts['NET RUSHING YARDS']?.home ?? '?'}. Passing: ${A.name} ${ts['NET PASSING YARDS']?.away ?? '?'}, ${H.name} ${ts['NET PASSING YARDS']?.home ?? '?'}.`,
+      ts['FIRST DOWNS'] ? `First downs: ${A.name} ${ts['FIRST DOWNS'].away}, ${H.name} ${ts['FIRST DOWNS'].home}.` : '',
+      ts['3rd down efficiency'] ? `Third downs: ${A.name} ${ts['3rd down efficiency'].away}, ${H.name} ${ts['3rd down efficiency'].home}.` : '',
+      ts['4th down efficiency'] ? `Fourth downs: ${A.name} ${ts['4th down efficiency'].away}, ${H.name} ${ts['4th down efficiency'].home}.` : '',
+      `Turnovers: ${A.name} threw ${ts['Had Intercepted']?.away ?? '?'} interceptions and lost fumbles ${ts['FUMBLES-LOST']?.away ?? '?'} (fumbles-lost); ${H.name} threw ${ts['Had Intercepted']?.home ?? '?'} interceptions and lost fumbles ${ts['FUMBLES-LOST']?.home ?? '?'} (fumbles-lost).`,
+      ts['PENALTIES-YARDS'] ? `Penalties-yards: ${A.name} ${ts['PENALTIES-YARDS'].away}, ${H.name} ${ts['PENALTIES-YARDS'].home}.` : '',
+      ts['TIME OF POSSESSION'] ? `Time of possession: ${A.name} ${ts['TIME OF POSSESSION'].away}, ${H.name} ${ts['TIME OF POSSESSION'].home}.` : '',
+      game.playerOfGame ? `Player of the Game: ${game.playerOfGame.name} (${game.playerOfGame.pos}, ${teamName2(game.playerOfGame.team)})${game.playerOfGameLine ? ': ' + game.playerOfGameLine : ''}.` : '',
+      `${A.name} top performers: QB ${fmt(tA.passing,'pass')}; RB ${fmt(tA.rushing,'rush')}; WR ${fmt(tA.recv,'recv')}; DEF ${fmt(tA.def,'def')}.`,
+      `${H.name} top performers: QB ${fmt(tH.passing,'pass')}; RB ${fmt(tH.rushing,'rush')}; WR ${fmt(tH.recv,'recv')}; DEF ${fmt(tH.def,'def')}.`,
+      '',
+      n ? narrativeText(n) : 'No play-by-play log is available for this game; do not describe specific quarters, drives or plays.',
+      '',
+      seasonContextText(game, ctx.cur, ctx.prev, teamName2),
+    ].filter(x => x !== null).join('\n');
+    const prompt2 = `Write the PCFL Network recap of Week ${week}: ${A.name} at ${H.name}.
+
+${facts}
+
+WRITING BRIEF
+- Paragraph 1: open on the defining moment (a scoring play, turnover, fourth-down stop or the closing stretch from the play-by-play), told live: the clock, the situation, the play, the score it produced. Then the result.
+- Paragraph 2: the arc of the game using the period scores and scoring plays: who struck first, the swings, the answers, the lead changes, where it turned.
+- Paragraph 3: the analyst's read: the matchup numbers that decided it (yards, rushing vs passing, third downs, turnovers) measured against each team's season norms from SEASON CONTEXT, and the standout players' lines placed in the season leaderboard.
+- Paragraph 4: reflective: what the result does to each team's record, power-poll standing, division race and streak, and what waits next week.
+- Weave season numbers into sentences naturally; do not list them. Vary sentence rhythm. Use player names exactly as given.
+- Every number you write must appear in the data above (scores, yards, records, ranks, per-game averages). No invented details.
+
+Return ONLY JSON in this shape:
+{
+  "headline": "vivid 8-14 word headline grounded in what actually happened",
+  "dek": "one-sentence subhead with the season stakes",
+  "body": ["paragraph 1", "paragraph 2", "paragraph 3", "paragraph 4"],
+  "turningPoint": "one sentence naming the decisive play or stretch from the play-by-play (period and clock)",
+  "byTheNumbers": ["3 or 4 short analytical notes, each built on one stat from the data and why it mattered"],
+  "unsungHero": { "name": "player name from the data", "team": "${aw.team}" | "${hm.team}", "why": "why he mattered beyond the headline numbers" }
+}`;
+    return callClaude(prompt2, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 1800, season, v2: true, edit: true,
+      validate: out => {
+        const problems = [];
+        if (!out || !Array.isArray(out.body) || out.body.length < 3) problems.push('body must be an array of at least 3 paragraphs');
+        if (out && !out.headline) problems.push('missing headline');
+        return problems.concat(numberGuard(prompt2, ['headline', 'dek', 'body', 'turningPoint', 'byTheNumbers', 'unsungHero'])(out));
+      } });
+  }
 
   const prompt = `Write a richer broadcast recap of a PCFL Week ${week} game.
 
@@ -963,7 +1072,7 @@ Return ONLY JSON in this shape:
 }
 
 /* -------------------- Weekly wrap-up article --------------------- */
-async function aiWeeklyWrap(games, week, season, powerRankings){
+async function aiWeeklyWrap(games, week, season, powerRankings, ctx = null){
   if (!games.length) return null;
   const scores = games.map(g=>{
     const A = TEAMS.find(t=>t.slug===g.away.team), H = TEAMS.find(t=>t.slug===g.home.team);
@@ -982,7 +1091,14 @@ ${scores}
 
 Top 5 in power poll:
 ${top5}
+${ctx ? `
+How each game unfolded (from the play-by-play):
+${games.map(g => { const f = g.gameFlow; if (!f) return `${teamName2(g.away.team)} at ${teamName2(g.home.team)}: no log.`; return `${teamName2(g.away.team)} at ${teamName2(g.home.team)}: periods ${f.quarters.map(q => q.q + ' ' + q.score).join(' | ')}; lead changes ${f.leadChanges}${f.largestLead ? `; largest lead ${f.largestLead.team} by ${f.largestLead.margin}` : ''}${f.overtime ? '; OVERTIME' : ''}${f.turnovers ? `; turnovers ${f.turnovers}` : ''}.`; }).join('\n')}
 
+Power poll movement this week: ${powerRankings.filter(r => r.prev && r.prev !== r.rank).map(r => `${teamName2(r.team)} ${r.prev}→${r.rank}`).join(', ') || 'none'}.
+Records now: ${Object.entries(ctx.cur.records || {}).map(([t, r]) => `${teamName2(t)} ${r}`).join(', ')}.
+Use these to find the week's real stories: comebacks, overtime, poll shake-ups, division races. Only numbers from the data.
+` : ''}
 Valid team slugs (use these exactly when referencing teams in the JSON):
 ${validSlugs}
 
@@ -1013,7 +1129,9 @@ Return ONLY JSON in this exact shape:
 }
 
 Produce 3 to 5 segments. Each segment's "teams" array must use 1 or 2 of the valid slugs above.`;
-  return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 2000, season });
+  return ctx
+    ? callClaude(prompt, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 2200, season, v2: true, edit: true, validate: numberGuard(prompt, ['headline', 'subhead', 'lead', 'segments', 'closer']) })
+    : callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 2000, season });
 }
 
 /* ================================================================== */
@@ -1174,6 +1292,7 @@ async function main(){
       .sort((a,b)=>num(a)-num(b));
     const weeks = [];
     let prevRanks = null;
+    let prevCtx = null;              // season-to-date context after the previous week (for "entering" numbers)
     let latestSchedule = null;
 
     for (const wd of weekDirs){
@@ -1235,6 +1354,19 @@ async function main(){
         const lf = logMap.get(`${g.away.team}|${g.home.team}`)
                 ?? logMap.get(`${g.home.team}|${g.away.team}`);
         g.logFile = lf ? lf.file : null;
+        // structured game flow from the play-by-play (also shown on the site's recap tab)
+        g.gameFlow = null;
+        if (g.logFile){
+          try {
+            const n = gameNarrative(read(join(logsDir, g.logFile)), logTeamName);
+            if (n){
+              const merged = [];
+              for (const sc of n.scoring){ const last = merged[merged.length - 1]; if (last && last.team === sc.team && /extra point|2-pt/.test(sc.kind) && last.kind === 'touchdown'){ last.score = sc.score; } else merged.push({ q: sc.q >= 5 ? 'OT' : 'Q' + sc.q, clock: sc.clock, team: sc.team, kind: sc.kind, play: sc.play, score: sc.score }); }
+              g.gameFlow = { quarters: n.quarters, scoring: merged, leadChanges: n.leadChanges, largestLead: n.largestLead, overtime: n.overtime, turnovers: n.turnovers.length };
+              g._narrative = n;
+            }
+          } catch (e){ console.warn(`  log parse failed for ${g.logFile}: ${e.message}`); }
+        }
       }
       // player of week stat line
       let powLine = '';
@@ -1244,8 +1376,9 @@ async function main(){
       }
 
       // -------------- AI generation (recaps + wrap-up) ----------
+      const curCtx = { records, standings: standData.standings, powerRankings: standData.powerRankings, leaders: seasonStats.leaders, teamStats: seasonStats.teamStats, nextWeekGames };
       if (AI.enabled && gameData.games.length){
-        const recapResults = await pAllLimit(gameData.games, g => aiRecap(g, week, season), 4);
+        const recapResults = await pAllLimit(gameData.games, g => aiRecap(g, week, season, { cur: curCtx, prev: prevCtx, narrative: g._narrative }), 4);
         for (let i = 0; i < gameData.games.length; i++){
           const ai = recapResults[i];
           if (ai) gameData.games[i].aiStory = ai;
@@ -1254,10 +1387,11 @@ async function main(){
       }
       let weeklyWrap = null;
       if (AI.enabled && gameData.games.length){
-        weeklyWrap = await aiWeeklyWrap(gameData.games, week, season, standData.powerRankings);
+        weeklyWrap = await aiWeeklyWrap(gameData.games, week, season, standData.powerRankings, { cur: curCtx, prev: prevCtx });
         if (weeklyWrap) console.log(`  ai: weekly wrap-up generated`);
       }
 
+      for (const g of gameData.games) delete g._narrative;
       const weekJson = {
         season: +season, week, date: standData.date,
         playerOfWeek: gameData.playerOfWeek ? { ...gameData.playerOfWeek, line: powLine } : null,
@@ -1285,6 +1419,7 @@ async function main(){
         powHistory[key].weeks.push(week);
       }
       prevRanks = new Map(standData.powerRankings.map(p=>[p.team,p.rank]));
+      prevCtx = curCtx;
       console.log(`✓ ${season} week ${week}: ${gameData.games.length} games, ${standData.powerRankings.length} ranked, ${Object.keys(seasonStats.leaders).filter(k=>seasonStats.leaders[k]?.length).length} leader boards`);
 
       // -------------- AI previews for NEXT week ------------------
@@ -1299,7 +1434,7 @@ async function main(){
         }
         const ranksMap = Object.fromEntries(standData.powerRankings.map(r => [r.team, r.rank]));
         const previewResults = await pAllLimit(nextWeekGames, g =>
-          aiPreview(g, week + 1, season, records, ranksMap, recent), 4);
+          aiPreview(g, week + 1, season, records, ranksMap, recent, curCtx), 4);
         const previewsJson = {
           season: +season, week: week + 1, generated: standData.date,
           games: nextWeekGames.map((g, i) => previewResults[i] ? { ...g, ...previewResults[i] } : g).filter(Boolean),

@@ -1188,3 +1188,17 @@ footer .copy { width: 100%; border-top: 1px solid #1d2127; margin-top: 26px; pad
 .update-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9000; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 16px; background: #15181d; color: #fff; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.35); font-size: 13px; max-width: calc(100vw - 32px); }
 .update-bar button { background: var(--gold, #f1be48); color: #15181d; border: 0; border-radius: 6px; padding: 7px 12px; font-family: var(--font-head); letter-spacing: .06em; font-size: 12px; cursor: pointer; }
 .update-bar button:hover { filter: brightness(1.08); }
+
+/* ---- AI recap v2: subhead, by-the-numbers, play-by-play scoring summary */
+.recap-dek { font-size: 15px; color: var(--muted, #5b6370); margin: -4px 0 14px; font-style: italic; }
+.recap-numbers ul { margin: 6px 0 0; padding-left: 18px; }
+.recap-numbers li { margin: 4px 0; line-height: 1.5; }
+.recap-flow .flow-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
+.recap-flow .flow-table td { padding: 7px 8px; border-top: 1px solid var(--line, #e6e8eb); vertical-align: top; }
+.recap-flow .flow-table td.q { white-space: nowrap; font-family: var(--font-head); color: var(--red, #d6001c); width: 1%; }
+.recap-flow .flow-table td.q span { display: block; color: var(--muted-2, #99a0aa); font-family: inherit; font-size: 11px; }
+.recap-flow .flow-table td.k { white-space: nowrap; font-weight: 600; width: 1%; }
+.recap-flow .flow-table td.s { white-space: nowrap; text-align: right; font-weight: 600; width: 1%; }
+@media (max-width: 640px) {
+  .recap-flow .flow-table td.p { display: none; }
+}

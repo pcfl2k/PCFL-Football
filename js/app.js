@@ -729,12 +729,18 @@ VIEWS.game = async function(season, week, id, q){
     recap: (() => {
       const s = g.aiStory || g.story;
       const isAI = !!g.aiStory;
+      const nums = isAI && Array.isArray(g.aiStory.byTheNumbers) && g.aiStory.byTheNumbers.length
+        ? `<div class="recap-cut recap-numbers"><div class="lbl">By the numbers</div><ul>${g.aiStory.byTheNumbers.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>` : '';
+      // Scoring timeline straight from the FBPro play-by-play log (not AI-written)
+      const flow = g.gameFlow && g.gameFlow.scoring?.length ? `<div class="recap-cut recap-flow"><div class="lbl">Scoring summary <span style="color:var(--muted-2);font-weight:500;text-transform:none;letter-spacing:0">· from the play-by-play${g.gameFlow.overtime ? ' · overtime' : ''}${g.gameFlow.leadChanges ? ` · ${g.gameFlow.leadChanges} lead change${g.gameFlow.leadChanges === 1 ? '' : 's'}` : ''}</span></div>
+        <table class="flow-table"><tbody>${g.gameFlow.scoring.map(sc => `<tr><td class="q">${esc(sc.q)}<span>${esc(sc.clock)}</span></td><td class="k">${esc(sc.team)} · ${esc(sc.kind === 'touchdown' ? 'TD' : sc.kind === 'field goal' ? 'FG' : sc.kind === 'safety' ? 'Safety' : sc.kind)}</td><td class="p">${esc(sc.play.replace(/\s*(First down|First and|Second and|Third and|Fourth and)[^.]*\./g, ''))}</td><td class="s">${esc(sc.score)}</td></tr>`).join('')}</tbody></table></div>` : '';
       const extras = isAI ? `
+        ${nums}
         ${g.aiStory.turningPoint ? `<div class="recap-cut"><div class="lbl">Turning point</div><p>${esc(g.aiStory.turningPoint)}</p></div>` : ''}
         ${g.aiStory.unsungHero ? `<div class="recap-cut"><div class="lbl">Unsung hero</div><p><b>${esc(g.aiStory.unsungHero.name)}</b> <span style="color:var(--muted-2)">(${esc(T(g.aiStory.unsungHero.team).abbr)})</span> — ${esc(g.aiStory.unsungHero.why)}</p></div>` : ''}
       ` : '';
       return `<div class="card recap-card reveal in"><div class="cat" style="color:var(--red);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">PCFL Network · Game Recap ${isAI ? '· <span style="color:var(--gold)">AI Analyst</span>' : ''}</div>
-        <h2>${esc(s.headline)}</h2>${s.body.map(p=>`<p>${esc(p)}</p>`).join('')}${extras}</div>`;
+        <h2>${esc(s.headline)}</h2>${isAI && g.aiStory.dek ? `<p class="recap-dek">${esc(g.aiStory.dek)}</p>` : ''}${s.body.map(p=>`<p>${esc(p)}</p>`).join('')}${extras}${flow}</div>`;
     })(),
     box: `<div class="card reveal in"><div class="box-2col">
       <div><a href="#/teams/${g.away.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></a>${boxSide('away')}</div>
