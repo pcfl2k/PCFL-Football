@@ -653,6 +653,17 @@ import { createHash } from 'node:crypto';
 // alternative. Either provider is fine; the code just picks based on which
 // secret is configured.
 const AI = (() => {
+  // Preferred: the league's free self-hosted Ollama on the VPS, reached through the
+  // Recruitment Center's token-protected relay (Ollama itself is never public).
+  const relayUrl = (process.env.PCFL_AI_URL || '').replace(/\/+$/, '');
+  const relayTok = process.env.PCFL_AI_TOKEN || '';
+  if (relayUrl && relayTok) return {
+    provider: 'ollama',
+    apiKey: relayTok,
+    model: process.env.PCFL_AI_MODEL || 'qwen2.5:3b',
+    endpoint: relayUrl + '/ai/chat',
+    enabled: true,
+  };
   const anthKey = process.env.ANTHROPIC_API_KEY || '';
   const hfKey   = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN || '';
   if (anthKey) return {
@@ -684,7 +695,7 @@ async function fetchWithRetry(url, opts, attempts = 4){
     if (r.status !== 429) return r;
     const retryAfter = r.headers.get('retry-after');
     const wait = retryAfter ? Math.min(70, +retryAfter) * 1000 : Math.min(60000, 6000 * Math.pow(2, i));
-    console.warn(`AI rate-limited (${url.includes('anthropic')?'anthropic':'hf'}), waiting ${Math.round(wait/1000)}s before retry ${i+1}/${attempts-1}`);
+    console.warn(`AI rate-limited (${AI.provider}), waiting ${Math.round(wait/1000)}s before retry ${i+1}/${attempts-1}`);
     await new Promise(res => setTimeout(res, wait));
   }
   return fetch(url, opts);
@@ -740,6 +751,10 @@ function extractJSON(text){
 // (GitHub Actions ::warning:: annotation + end-of-run summary) instead of silently
 // shipping deterministic write-ups in place of AI recaps.
 const AI_STATS = { cached: 0, generated: 0, failed: 0, skipped: 0, fatal: null };
+// PCFL_AI_CACHE_ONLY=1: use cached AI content but never generate (staging builds and
+// non-main pushes — the slow free model only runs for the production site).
+const AI_CACHE_ONLY = process.env.PCFL_AI_CACHE_ONLY === '1';
+if (AI.enabled && AI_CACHE_ONLY) console.log('ℹ AI cache-only mode: cached content is used, nothing new is generated in this build.');
 function aiFatal(status, body){
   if (status === 401 || status === 403) return `the ${AI.provider} API key was rejected (${status})`;
   if (/credit balance|billing|insufficient_quota|quota/i.test(body)) return `the ${AI.provider} account is out of credit`;
@@ -752,14 +767,21 @@ process.on('exit', () => {
   if (AI_STATS.fatal) console.log(`::warning title=AI recaps not generated::${AI_STATS.fatal} — ${AI_STATS.failed + AI_STATS.skipped} AI recaps/previews/wraps fell back to deterministic text. Fix the account, then re-run this workflow; cached content is unaffected.`);
 });
 
+const LEGACY_AI = [['anthropic', 'claude-haiku-4-5-20251001'], ['huggingface', 'Qwen/Qwen2.5-7B-Instruct']];
+let relayChain = Promise.resolve();   // the VPS model runs one generation at a time; don't stack up timeouts
 async function callClaude(prompt, opts = {}){
   if (!AI.enabled) return null;
-  const cacheKey = createHash('sha256').update(AI.provider + '\n' + AI.model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
-  const cacheFile = join(aiCacheDir(opts.season || 'global'), cacheKey + '.json');
-  if (existsSync(cacheFile)){
-    try { const hit = JSON.parse(readFileSync(cacheFile, 'utf8')); AI_STATS.cached++; return hit; } catch {}
+  const keyFor = (provider, model) => createHash('sha256').update(provider + '\n' + model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
+  const cacheFile = join(aiCacheDir(opts.season || 'global'), keyFor(AI.provider, AI.model) + '.json');
+  // Reuse content already written for the same prompt by any provider (the existing
+  // Claude Haiku recaps stay; only genuinely new prompts are generated).
+  for (const [prov, model] of [[AI.provider, AI.model], ...LEGACY_AI.filter(([p, m]) => p !== AI.provider || m !== AI.model)]){
+    const f = join(aiCacheDir(opts.season || 'global'), keyFor(prov, model) + '.json');
+    if (existsSync(f)){
+      try { const hit = JSON.parse(readFileSync(f, 'utf8')); AI_STATS.cached++; return hit; } catch {}
+    }
   }
-  if (AI_STATS.fatal){ AI_STATS.skipped++; return null; }
+  if (AI_STATS.fatal || AI_CACHE_ONLY){ AI_STATS.skipped++; return null; }
   mkdirSync(aiCacheDir(opts.season || 'global'), { recursive: true });
 
   // For JSON-mode prompts, stress the constraint at the end — open models
@@ -769,7 +791,14 @@ async function callClaude(prompt, opts = {}){
     : prompt;
 
   let fetchOpts;
-  if (AI.provider === 'anthropic'){
+  if (AI.provider === 'ollama'){
+    fetchOpts = {
+      method: 'POST',
+      headers: { 'x-pcfl-ai-token': AI.apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify({ system: opts.system || '', prompt: userContent, json: !!opts.parseJSON, maxTokens: opts.maxTokens || 1500, temperature: 0.7 }),
+      signal: AbortSignal.timeout(600000),
+    };
+  } else if (AI.provider === 'anthropic'){
     fetchOpts = {
       method: 'POST',
       headers: {
@@ -805,7 +834,9 @@ async function callClaude(prompt, opts = {}){
   }
 
   try {
-    const r = await fetchWithRetry(AI.endpoint, fetchOpts);
+    const r = AI.provider === 'ollama'
+      ? await (relayChain = relayChain.catch(() => {}).then(() => fetchWithRetry(AI.endpoint, fetchOpts)))
+      : await fetchWithRetry(AI.endpoint, fetchOpts);
     if (!r.ok){
       const err = await r.text();
       AI_STATS.failed++;
@@ -815,8 +846,8 @@ async function callClaude(prompt, opts = {}){
       return null;
     }
     const j = await r.json();
-    const text = AI.provider === 'anthropic'
-      ? (j.content?.[0]?.text || '')
+    const text = AI.provider === 'ollama' ? (j.text || '')
+      : AI.provider === 'anthropic' ? (j.content?.[0]?.text || '')
       : (j.choices?.[0]?.message?.content || '');
     if (!text) return null;
     let result;

@@ -50,16 +50,32 @@ jobs:
           fi
 
       - name: Parse FBPro98 exports (production)
+        timeout-minutes: 240
         run: node prod/scripts/parse-fbpro.mjs
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PCFL_AI_URL: ${{ secrets.PCFL_AI_URL }}
+          PCFL_AI_TOKEN: ${{ secrets.PCFL_AI_TOKEN }}
+          # new AI recaps (free VPS Ollama, ~1-3 min each) are generated only for the live site
+          PCFL_AI_CACHE_ONLY: ${{ github.ref != 'refs/heads/main' && '1' || '' }}
+
+      - name: Share AI cache with staging (no regeneration of the same prompts)
+        run: |
+          for d in prod/data/*/ai-cache; do
+            season=$(basename "$(dirname "$d")")
+            mkdir -p "staging/data/$season/ai-cache"
+            cp -n "$d"/*.json "staging/data/$season/ai-cache/" 2>/dev/null || true
+          done
 
       - name: Parse FBPro98 exports (staging)
         run: node staging/scripts/parse-fbpro.mjs
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PCFL_AI_URL: ${{ secrets.PCFL_AI_URL }}
+          PCFL_AI_TOKEN: ${{ secrets.PCFL_AI_TOKEN }}
+          PCFL_AI_CACHE_ONLY: '1'
 
       - name: Commit regenerated production data
         if: github.ref == 'refs/heads/main'
