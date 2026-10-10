@@ -1352,6 +1352,11 @@ async function main(){
         if (!prev || prev.rev < rev) logMap.set(key, { file: f, rev });
       }
 
+      // broadcast highlight clips (built by scripts/highlights.mjs from the video's game clock)
+      const hlFile = join(DATA, season, 'highlights', `week${week}.json`);
+      let hlByGame = {};
+      if (existsSync(hlFile)){ try { hlByGame = JSON.parse(read(hlFile)).games || {}; } catch (e){ console.warn(`  highlights file unreadable: ${e.message}`); } }
+
       // attach stories + videos + next opponents + game logs
       const nextWeekGames = schedule.find(w=>w.week===week+1)?.games ?? [];
       for (const g of gameData.games){
@@ -1369,6 +1374,8 @@ async function main(){
         const lf = logMap.get(`${g.away.team}|${g.home.team}`)
                 ?? logMap.get(`${g.home.team}|${g.away.team}`);
         g.logFile = lf ? lf.file : null;
+        const hl = hlByGame[`${g.away.team}|${g.home.team}`];
+        g.highlights = Array.isArray(hl) && hl.length && (!hl[0].videoId || !g.videoId || hl[0].videoId === g.videoId) ? hl : null;
         // structured game flow from the play-by-play (also shown on the site's recap tab)
         g.gameFlow = null;
         if (g.logFile){

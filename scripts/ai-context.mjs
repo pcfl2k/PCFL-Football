@@ -125,8 +125,25 @@ export function gameNarrative(text, rename = n => n) {
     for (const p of playsSince) out.closing.push({ q: last.q, clock: last.clock, offense: last.team, situation: `${last.down} and ${last.dist} at ${last.spot}`, score: `${A} ${last.as}, ${B} ${last.bs}`, play: p.text });
   out.closing = out.closing.slice(-24);
   out.finalPossession = { team: last.team, q: last.q, clock: last.clock, spot: last.spot, down: last.down, dist: last.dist, plays: playsSince.map(p => p.text) };
-  for (const p of playsSince) if (/Touchdown|field goal\. The kick is good|Safety/.test(p.raw)) out.lateScoreNote = p.text;
-  out.final = `${A} ${last.as}, ${B} ${last.bs}`;
+  // points scored on snaps after the last possession line (walk-off TD/PAT/FG/safety)
+  let fa = last.as, fb = last.bs;
+  for (const p of playsSince) {
+    const kicker = (p.raw.match(/^(.+?)'s K\d? /) || [])[1];
+    const kTeam = kicker ? rename(kicker) : last.team;
+    let pts = 0, team = null, kind = null;
+    const td = p.raw.match(/Touchdown, (.+?)!/);
+    if (td) { team = rename(td[1]); pts = 6; kind = 'touchdown'; }
+    else if (/extra point\. The kick is good/.test(p.raw)) { team = kTeam; pts = 1; kind = 'extra point'; }
+    else if (/2-Point conversion is good/.test(p.raw)) { team = last.team; pts = 2; kind = '2-pt conversion'; }
+    else if (/field goal\. The kick is good/.test(p.raw)) { team = kTeam; pts = 3; kind = 'field goal'; }
+    else if (/Safety!/.test(p.raw)) { team = last.team === A ? B : A; pts = 2; kind = 'safety'; }
+    if (!pts) continue;
+    if (team === A) fa += pts; else fb += pts;
+    out.scoring.push({ q: last.q, clock: last.clock, team, pts, kind, play: p.text, score: `${A} ${fa}, ${B} ${fb}`, drive: null, nonOffense: false, final: true });
+    out.lateScoreNote = p.text;
+  }
+  if (Math.sign(fa - fb) !== Math.sign(last.as - last.bs) && fa !== fb && last.as !== last.bs) out.leadChanges++;
+  out.final = `${A} ${fa}, ${B} ${fb}`;
   quarterEnd[last.q] = out.final;
   out.quarters = Object.entries(quarterEnd).sort((x, y) => x[0] - y[0]).map(([q, s]) => ({ q: QLABEL(+q), score: s }));
   out.explosive.sort((x, y) => y.yards - x.yards).splice(6);

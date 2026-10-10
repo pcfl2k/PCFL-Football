@@ -24,6 +24,7 @@ const LEGACY_SLUGS = { oregon: 'arizona-state', oklahoma: 'michigan-state', clem
 const slugOf = slug => LEGACY_SLUGS[slug] || slug;
 const T = slug => App.teamMap[slugOf(slug)] || { slug, name: slug, nickname:'', abbr:(slug||'?').slice(0,3).toUpperCase(), colors:{primary:'#444',secondary:'#999'} };
 const logo = (slug, dark) => `assets/logos/${slugOf(slug)}${dark ? '-dark' : ''}.png`;
+const teamSlugByName = name => (App.teams || []).find(t => t.name === name)?.slug || null;
 const num = s => { const n = parseFloat(String(s).replace(/[^\d.\-]/g,'')); return isNaN(n) ? 0 : n; };
 const fmtDate = d => d || '';
 
@@ -721,7 +722,9 @@ VIEWS.game = async function(season, week, id, q){
 
   const tabs = [
     g.videoId ? ['video','▶ Broadcast'] : null,
-    ['recap','Recap'], ['box','Box Score'], ['stats','Team Stats'],
+    ['recap','Recap'],
+    g.highlights?.length ? ['highlights',`★ Highlights <span class="gc-count">${g.highlights.length}</span>`] : null,
+    ['box','Box Score'], ['stats','Team Stats'],
   ].filter(Boolean);
 
   const tabContent = {
@@ -742,6 +745,13 @@ VIEWS.game = async function(season, week, id, q){
       return `<div class="card recap-card reveal in"><div class="cat" style="color:var(--red);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">PCFL Network · Game Recap ${isAI ? '· <span style="color:var(--gold)">AI Analyst</span>' : ''}</div>
         <h2>${esc(s.headline)}</h2>${isAI && g.aiStory.dek ? `<p class="recap-dek">${esc(g.aiStory.dek)}</p>` : ''}${s.body.map(p=>`<p>${esc(p)}</p>`).join('')}${extras}${flow}</div>`;
     })(),
+    // Clips are segments of the broadcast (YouTube start/end), matched to the play-by-play by the game clock
+    highlights: g.highlights?.length ? `<div class="hl-grid reveal in">${g.highlights.map((h, i) => `
+      <article class="card hl-card">
+        <div class="hl-head"><span class="hl-num">${i + 1}</span><div><div class="hl-title">${esc(h.title)}</div><div class="hl-meta">${esc(h.q >= 5 ? 'OT' : 'Q' + h.q)} · ${esc(h.clock)}${h.after ? ` · ${esc(h.after)}` : ''}</div></div><img src="${logo(teamSlugByName(h.team) || g.home.team)}" alt=""></div>
+        <div class="video-shell hl-video"><iframe loading="lazy" src="https://www.youtube.com/embed/${encodeURIComponent(h.videoId)}?start=${+h.start}&end=${+h.end}&rel=0&modestbranding=1" title="${esc(h.title)}" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>
+        <p class="hl-play">${esc(h.play.replace(/\s*(First down|First and|Second and|Third and|Fourth and)[^.]*\./g, ''))}</p>
+      </article>`).join('')}</div><div class="hl-note">Clips are cut from the PCFL Network broadcast and matched to the official play-by-play by the game clock.</div>` : '',
     box: `<div class="card reveal in"><div class="box-2col">
       <div><a href="#/teams/${g.away.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.away.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(A.name)}</b></a>${boxSide('away')}</div>
       <div><a href="#/teams/${g.home.team}" style="padding:14px 16px 0;display:flex;gap:10px;align-items:center"><img src="${logo(g.home.team)}" style="width:30px;height:30px" alt=""><b style="font-family:var(--font-head);font-size:16px">${esc(H.name)}</b></a>${boxSide('home')}</div>

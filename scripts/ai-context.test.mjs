@@ -9,6 +9,7 @@ import { gameNarrative, narrativeText, seasonContextText, previewContextText, nu
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = join(ROOT, 'data');
 const j = p => JSON.parse(readFileSync(join(DATA, p), 'utf8'));
+const teams = j('teams.json'); const name = s => teams.find(x => x.slug === s)?.name || s;
 let passed = 0; const t = (name, fn) => { fn(); passed++; console.log('  ✓', name); };
 
 // ---- play-by-play narrative: Week 2 Georgia at Colorado (verified by hand against the raw log)
@@ -78,12 +79,32 @@ t('narrative: scoring drives carry snaps/yards/time; non-offensive scores flagge
   assert.ok(tds.every(s => s.drive && s.drive.snaps > 0 && s.drive.yards > 0), 'all offensive TD drives measured');
   assert.match(narrativeText(n), /\[drive: 8 plays, 53 yards, 1:05, started at their 47 yard line\]/);
 });
+t('narrative: final score rebuilt from the play-by-play matches the official result (all 2028 games but the known ND-UCLA re-sim)', () => {
+  const R = x => ({ Oregon: 'Arizona State', Oklahoma: 'Michigan State', Clemson: 'Alabama' }[x] || x);
+  const nm = s => teams.find(x => x.slug === s)?.name;
+  const mism = [];
+  for (const w of readdirSync(join(DATA, '2028/logs'))) {
+    const wk = j(`2028/${w}.json`);
+    for (const g of wk.games) {
+      if (!g.logFile) continue;
+      const fin = gameNarrative(readFileSync(join(DATA, '2028/logs', w, g.logFile), 'utf8'), R).final;
+      const a = `${nm(g.away.team)} ${g.away.score}, ${nm(g.home.team)} ${g.home.score}`, b = `${nm(g.home.team)} ${g.home.score}, ${nm(g.away.team)} ${g.away.score}`;
+      if (fin !== a && fin !== b) mism.push(`${w}/${g.logFile}`);
+    }
+  }
+  assert.deepEqual(mism, ['week1/28W01ND@UCLA2.log']);
+});
+t('narrative: walk-off points after the last possession line are counted (Michigan State at USC, week 2)', () => {
+  const f = readdirSync(join(DATA, '2028/logs/week2')).find(x => /OKL@USC/.test(x));
+  const r = gameNarrative(readFileSync(join(DATA, '2028/logs/week2', f), 'utf8'), x => ({ Oklahoma: 'Michigan State' }[x] || x));
+  assert.equal(r.final, 'Michigan State 32, USC 35');
+  assert.equal(r.scoring.at(-1).kind, 'field goal'); assert.equal(r.scoring.at(-1).team, 'USC'); assert.equal(r.scoring.at(-1).final, true);
+});
 t('narrative: garbage input returns null instead of throwing', () => {
   assert.equal(gameNarrative(''), null); assert.equal(gameNarrative('not a log '.repeat(50)), null);
 });
 
 // ---- season context
-const teams = j('teams.json'); const name = s => teams.find(x => x.slug === s)?.name || s;
 const ctx = w => ({ records: w.records, standings: w.standings, powerRankings: w.powerRankings, leaders: w.leaders, teamStats: w.teamSeasonStats, nextWeekGames: w.nextWeek?.games });
 const w1 = j('2028/week1.json'), w2 = j('2028/week2.json');
 const game = w2.games.find(g => g.home.team === 'colorado');
