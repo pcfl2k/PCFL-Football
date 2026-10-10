@@ -43,9 +43,22 @@ export function gameNarrative(text, rename = n => n) {
   }
   const states = items.filter(i => i.kind === 'state');
   if (states.length < 10) return null;
+  // apply the same renames inside play descriptions ("Oklahoma's QB ..." -> "Michigan State's QB ...")
+  const renames = new Map();
+  for (const p of paras) { const m = p.match(STATE); if (m) for (const raw of [m[1], m[7], m[9]]) if (rename(raw) !== raw) renames.set(raw, rename(raw)); }
+  if (renames.size) {
+    const rx = new RegExp(`\\b(${[...renames.keys()].map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'g');
+    for (const it of items) {
+      if (it.kind === 'play') it.text = it.text.replace(rx, k => renames.get(k));
+      else it.spot = it.spot.replace(rx, k => renames.get(k));   // "at Clemson's 35 yard line"
+    }
+  }
   const A = states[0].a, B = states[0].b;
   const out = { teams: [A, B], scoring: [], quarters: [], leadChanges: 0, largestLead: null, turnovers: [], explosive: [], fourthDownStops: [], missedKicks: [], overtime: false, final: null, finalPossession: null };
 
+  // closing sequence: every play in the final 3:00 of regulation (and all of overtime), in order
+  const secs = c => { const [m, s] = String(c).split(':'); return (+m || 0) * 60 + (+s || 0); };
+  out.closing = [];
   let prev = null, playsSince = [], leader = 0;
   const quarterEnd = {};
   const pushScore = (st, plays) => {
@@ -59,6 +72,8 @@ export function gameNarrative(text, rename = n => n) {
     if (it.kind === 'play') { playsSince.push(it); continue; }
     const st = it;
     if (prev) {
+      if ((prev.q === 4 && secs(prev.clock) <= 180) || prev.q >= 5)
+        for (const p of playsSince) out.closing.push({ q: prev.q, clock: prev.clock, offense: prev.team, situation: `${prev.down} and ${prev.dist} at ${prev.spot}`, score: `${A} ${prev.as}, ${B} ${prev.bs}`, play: p.text });
       if (st.as !== prev.as || st.bs !== prev.bs) pushScore(st, playsSince);
       // turnovers: interception, or a fumble after which the other team has the ball
       for (const p of playsSince) {
@@ -86,6 +101,9 @@ export function gameNarrative(text, rename = n => n) {
   }
   // plays after the last state line (final snaps, possible last score)
   const last = states[states.length - 1];
+  if ((last.q === 4 && secs(last.clock) <= 180) || last.q >= 5)
+    for (const p of playsSince) out.closing.push({ q: last.q, clock: last.clock, offense: last.team, situation: `${last.down} and ${last.dist} at ${last.spot}`, score: `${A} ${last.as}, ${B} ${last.bs}`, play: p.text });
+  out.closing = out.closing.slice(-24);
   out.finalPossession = { team: last.team, q: last.q, clock: last.clock, spot: last.spot, down: last.down, dist: last.dist, plays: playsSince.map(p => p.text) };
   for (const p of playsSince) if (/Touchdown|field goal\. The kick is good|Safety/.test(p.raw)) out.lateScoreNote = p.text;
   out.final = `${A} ${last.as}, ${B} ${last.bs}`;
@@ -111,7 +129,12 @@ export function narrativeText(n) {
   if (n.explosive.length) { L.push('Explosive plays (25+ yards):'); for (const e of n.explosive) L.push(`  ${QLABEL(e.q)} ${e.clock} ${e.team} ${e.yards} yds${e.td ? ' (TD)' : ''}: ${e.play}`); }
   if (n.fourthDownStops.length) { L.push('Fourth-down stops:'); for (const f of n.fourthDownStops) L.push(`  ${QLABEL(f.q)} ${f.clock} ${f.offense} failed on 4th and ${f.dist} at ${f.spot}: ${f.play}`); }
   if (n.missedKicks.length) { L.push('Missed field goals:'); for (const k of n.missedKicks) L.push(`  ${QLABEL(k.q)} ${k.clock} ${k.team}: ${k.play}`); }
+  if (n.closing?.length) {
+    L.push('Closing sequence, every play in order (period, clock, offense, situation, score before the play):');
+    for (const c of n.closing) L.push(`  ${QLABEL(c.q)} ${c.clock} ${c.offense} ${c.situation} [${c.score}]: ${c.play}`);
+  }
   if (n.finalPossession) L.push(`Final possession: ${n.finalPossession.team}, ${QLABEL(n.finalPossession.q)} ${n.finalPossession.clock}, ${n.finalPossession.down} and ${n.finalPossession.dist} at ${n.finalPossession.spot}.`);
+  L.push('Only the events listed above happened as described. Do not describe kickoffs, onside kicks, kneel-downs, timeouts, penalties on specific plays or quarterback changes unless they appear above.');
   L.push(`Final: ${n.final}.`);
   return L.join('\n');
 }

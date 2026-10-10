@@ -42,10 +42,27 @@ t('narrative: old school names in logs map to the rebranded teams', () => {
   const r = gameNarrative(readFileSync(join(DATA, '2028/logs/week2', f), 'utf8'), x => ({ Oklahoma: 'Michigan State' }[x] || x));
   assert.ok(r.teams.includes('Michigan State') && !narrativeText(r).includes("Oklahoma's ball"));
 });
+t('narrative: no pre-rebrand school name survives anywhere in any prompt text', () => {
+  const R = x => ({ Oregon: 'Arizona State', Oklahoma: 'Michigan State', Clemson: 'Alabama' }[x] || x);
+  let leaks = 0;
+  for (const w of readdirSync(join(DATA, '2028/logs'))) for (const f of readdirSync(join(DATA, '2028/logs', w)))
+    if (/(Oregon|Oklahoma|Clemson)/.test(narrativeText(gameNarrative(readFileSync(join(DATA, '2028/logs', w, f), 'utf8'), R)))) leaks++;
+  assert.equal(leaks, 0);
+});
 t('narrative: every 2028 log parses; overtime games detected', () => {
   let ok = 0, total = 0, ot = 0;
   for (const w of readdirSync(join(DATA, '2028/logs'))) for (const f of readdirSync(join(DATA, '2028/logs', w))) { total++; const r = gameNarrative(readFileSync(join(DATA, '2028/logs', w, f), 'utf8')); if (r) { ok++; if (r.overtime) ot++; } }
   assert.equal(ok, total); assert.ok(total >= 100); assert.ok(ot >= 1);
+});
+t('narrative: closing sequence lists the real final snaps (Week 2 Tennessee at Penn State)', () => {
+  const f = readdirSync(join(DATA, '2028/logs/week2')).find(x => /TENN@PENNST/.test(x));
+  const r = gameNarrative(readFileSync(join(DATA, '2028/logs/week2', f), 'utf8'));
+  const txt = narrativeText(r);
+  assert.ok(r.closing.length >= 3, 'final-3:00 plays captured');
+  assert.match(txt, /Closing sequence/);
+  assert.match(txt, /Jake Merklinger is sacked/, 'backup QB on the final drive is in the facts');
+  assert.ok(!/onside/i.test(txt.replace(/Do not describe[^.]*\./, '')), 'no onside kick in this game');
+  assert.match(txt, /Do not describe kickoffs, onside kicks, kneel-downs/);
 });
 t('narrative: garbage input returns null instead of throwing', () => {
   assert.equal(gameNarrative(''), null); assert.equal(gameNarrative('not a log '.repeat(50)), null);
