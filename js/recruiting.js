@@ -678,7 +678,7 @@ async function adminHTML() {
     ${cr?.status === 'ACTIVE' ? `<button class="rc-btn dark" data-rc="pause">⏸ Pause recruitment</button>` : cr?.status === 'PAUSED' ? `<button class="rc-btn primary" data-rc="resume">▶ Resume recruitment</button>` : ''}
     ${next && !(cr && ['ACTIVE', 'PAUSED'].includes(cr.status)) ? `<button class="rc-btn primary" data-rc="startround:${next.id}">▶ Start ${esc(next.name.split('—')[0].trim())} (${roundN(next.id)} players)</button>` : ''}
     ${A.suspended ? `<button class="rc-btn gold" data-rc="unsuspend">Lift bidding suspension</button>` : `<button class="rc-btn" data-rc="suspend">⚠ Suspend all bidding</button>`}
-    <button class="rc-btn" data-rc="import">⇪ Import recruits</button><button class="rc-btn" data-rc="addrecruit">+ Add recruit</button>${S.demo ? '' : `<button class="rc-btn" data-rc="provision">🔑 Team logins</button>`}<button class="rc-btn" data-rc="audit">Audit log</button><button class="rc-btn" data-rc="health">System health</button>
+    <button class="rc-btn" data-rc="import">⇪ Import recruits</button><button class="rc-btn" data-rc="addrecruit">+ Add recruit</button>${S.demo ? '' : `<button class="rc-btn" data-rc="provision">🔑 Team logins</button>`}<button class="rc-btn" data-rc="audit">Audit log</button>${S.demo ? '' : `<button class="rc-btn" data-rc="league">🏈 League files</button>`}<button class="rc-btn" data-rc="health">System health</button>
     <button class="rc-btn ${S.demoInfo?.active ? 'gold' : ''}" data-rc="demo">🧪 ${S.demo ? 'Demo controls' : S.demoInfo?.active ? 'Demo running' : 'Demo mode'}</button>
     <button class="rc-btn ghost sm" data-rc="settings">Settings</button></div>
   <div class="rc-admin-grid">
@@ -727,6 +727,8 @@ function readMapping() {
 /* ------------------------------------------------------------ actions */
 const ACTIONS = {
   retry: () => mount(),
+  // league files (feat/league-reconcile): FBPro98 package from signed recruits — module js/recruiting-league.js
+  league: async () => { try { const m = await import(new URL('js/recruiting-league.js?v=__BUILD__', document.baseURI).href); await m.open({ api, apiBase: CFG.apiBase, token: () => S.token, demo: S.demo, modal, closeModal, toast, esc, T }); } catch (e) { reportClientError(e, 'league-files'); toast('League files', e.message, 'err'); } },
   login: () => { closeModal(); const root = $('#rc-root'); root.innerHTML = heroHTML() + loginHTML(); bindLogin(); },
   loginlogo: (_, el) => { const slug = el.selectedOptions[0].dataset.slug; const img = $('#rc-login-logo'); if (img) { img.style.visibility = slug ? '' : 'hidden'; if (slug) img.src = logo(slug); } },
   dologin: async () => {
