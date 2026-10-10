@@ -32,3 +32,4 @@
   .rc-forgot { margin-left: 0; width: 100%; }
   .rc-em-frame { height: 380px; }
 }
+.rc-em-list { margin: 6px 0 10px; padding-left: 18px; } .rc-em-list li { margin: 4px 0; line-height: 1.5; }

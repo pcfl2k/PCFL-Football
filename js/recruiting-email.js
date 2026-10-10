@@ -23,7 +23,7 @@ export function installEmail(ctx) {
   X.ACTIONS.doprovision = doProvision;
   X.ACTIONS.resetpw = resetPw;
   injectCss();
-  const mo = new MutationObserver(() => { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; try { enhance(); } catch (e) { console.error('[recruiting-email]', e); } }); } });
+  const mo = new MutationObserver(() => { if (!pending) { pending = true; setTimeout(() => { pending = false; try { enhance(); } catch (e) { console.error('[recruiting-email]', e); } }, 0); } });   // setTimeout (not rAF): also runs in background tabs
   mo.observe(document.body, { childList: true, subtree: true });
   enhance();
 }
@@ -62,7 +62,7 @@ function enhance() {
   const bar = $('.rc-admin-actions');
   if (bar && !X.S.demo && !bar.querySelector('[data-rc="emailcompose"]')) {
     const anchor = bar.querySelector('[data-rc="provision"]') || bar.querySelector('[data-rc="audit"]');
-    const html = `<button class="rc-btn" data-rc="emailcompose">✉ Email coaches</button>`;
+    const html = `<button class="rc-btn" data-rc="emailcompose">✉ Email coaches</button><button class="rc-btn" data-rc="emailalllogins" ${X.S.demo ? 'disabled title="Not available in demo mode"' : 'title="Email every coach their Recruitment Center login"'}>✉ Email all logins</button>`;
     if (anchor) anchor.insertAdjacentHTML('afterend', html); else bar.insertAdjacentHTML('beforeend', html);
   }
   // franchise table → coach column + per-team buttons
@@ -296,6 +296,27 @@ const ACTIONS = {
       const lt = $('#rc-em-lasttest'); if (lt) lt.innerHTML = `${out.ok ? '✓' : '✕'} ${esc(out.message)}`;
     } catch (e) { X.toast('Test failed', e.message, 'err'); }
     if (el) { el.disabled = false; el.textContent = 'Test connection'; }
+  },
+  emailalllogins: () => {
+    const teams = X.S.adminData?.teams || [];
+    const humans = teams.filter(t => !t.cpu && t.coachEmail), cpu = teams.filter(t => t.cpu), none = teams.filter(t => !t.cpu && !t.coachEmail);
+    const temp = humans.filter(t => t.tempPassword || !t.provisioned), rem = humans.filter(t => !(t.tempPassword || !t.provisioned));
+    X.modal(`<div class="rc-mhead"><div><h3>Email every coach their login</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody">
+      <p>Sends one email to each of the <b>${humans.length}</b> coaches with an email on file:</p>
+      <ul class="rc-em-list">
+        <li><b>${temp.length}</b> get their franchise login and temporary password${temp.length ? ` <span class="rc-note">(${temp.map(t => esc(t.abbr || t.name)).join(', ')})</span>` : ''}.</li>
+        <li><b>${rem.length}</b> already chose their own password and get a login reminder — their password is never emailed${rem.length ? ` <span class="rc-note">(${rem.map(t => esc(t.abbr || t.name)).join(', ')})</span>` : ''}.</li>
+      </ul>
+      <p class="rc-note">Skipped: ${cpu.length} CPU franchise${cpu.length === 1 ? '' : 's'}${none.length ? ` and ${none.length} without an email (${none.map(t => esc(t.name)).join(', ')})` : ''}. No password is reset.</p>
+      <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="doemailalllogins">Send ${humans.length} emails</button></div></div>`, 'sm');
+  },
+  doemailalllogins: async (_, el) => {
+    if (el) el.disabled = true;
+    try {
+      const out = await X.api('/admin/email/logins', { method: 'POST', body: {} });
+      const tp = out.sent.filter(x => x.kind === 'temp-password').length;
+      X.closeModal(); X.toast('✓ Login emails queued', `${out.sent.length} coaches: ${tp} temporary passwords, ${out.sent.length - tp} reminders${out.mail !== 'ready' ? ' · mail is not sending yet — check Mail status' : ''}`, 'ok', 9000);
+    } catch (e) { if (el) el.disabled = false; X.toast('Not sent', e.message, 'err'); }
   },
   emaillogin: slug => {
     const t = (X.S.adminData?.teams || []).find(x => x.slug === slug); if (!t) return;
