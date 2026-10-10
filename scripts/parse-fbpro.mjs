@@ -617,13 +617,31 @@ function extractJSON(text){
   return null;
 }
 
+// Circuit breaker: an account-level failure (no credit, bad/revoked key) will fail every
+// call the same way, so stop after the first one, keep cached content, and say so loudly
+// (GitHub Actions ::warning:: annotation + end-of-run summary) instead of silently
+// shipping deterministic write-ups in place of AI recaps.
+const AI_STATS = { cached: 0, generated: 0, failed: 0, skipped: 0, fatal: null };
+function aiFatal(status, body){
+  if (status === 401 || status === 403) return `the ${AI.provider} API key was rejected (${status})`;
+  if (/credit balance|billing|insufficient_quota|quota/i.test(body)) return `the ${AI.provider} account is out of credit`;
+  return null;
+}
+process.on('exit', () => {
+  if (!AI.enabled) return;
+  const line = `AI content: ${AI_STATS.cached} from cache, ${AI_STATS.generated} newly generated, ${AI_STATS.failed + AI_STATS.skipped} missing`;
+  console.log('ℹ ' + line);
+  if (AI_STATS.fatal) console.log(`::warning title=AI recaps not generated::${AI_STATS.fatal} — ${AI_STATS.failed + AI_STATS.skipped} AI recaps/previews/wraps fell back to deterministic text. Fix the account, then re-run this workflow; cached content is unaffected.`);
+});
+
 async function callClaude(prompt, opts = {}){
   if (!AI.enabled) return null;
   const cacheKey = createHash('sha256').update(AI.provider + '\n' + AI.model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
   const cacheFile = join(aiCacheDir(opts.season || 'global'), cacheKey + '.json');
   if (existsSync(cacheFile)){
-    try { return JSON.parse(readFileSync(cacheFile, 'utf8')); } catch {}
+    try { const hit = JSON.parse(readFileSync(cacheFile, 'utf8')); AI_STATS.cached++; return hit; } catch {}
   }
+  if (AI_STATS.fatal){ AI_STATS.skipped++; return null; }
   mkdirSync(aiCacheDir(opts.season || 'global'), { recursive: true });
 
   // For JSON-mode prompts, stress the constraint at the end — open models
@@ -672,6 +690,9 @@ async function callClaude(prompt, opts = {}){
     const r = await fetchWithRetry(AI.endpoint, fetchOpts);
     if (!r.ok){
       const err = await r.text();
+      AI_STATS.failed++;
+      const fatal = aiFatal(r.status, err);
+      if (fatal){ AI_STATS.fatal = fatal; console.warn(`AI disabled for the rest of this run: ${fatal}.`); }
       console.warn(`AI call failed (${AI.provider}): ${r.status} ${err.slice(0, 200)}`);
       return null;
     }
@@ -688,6 +709,7 @@ async function callClaude(prompt, opts = {}){
       result = { text };
     }
     writeFileSync(cacheFile, JSON.stringify(result));
+    AI_STATS.generated++;
     return result;
   } catch (e){
     console.warn(`AI fetch error: ${e.message}`);
