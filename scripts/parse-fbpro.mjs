@@ -382,42 +382,160 @@ function fixName(n){
 /* ------------------------------------------------------------------ */
 /* Rosters parser                                                      */
 /* ------------------------------------------------------------------ */
+/*
+ * FBPro98 roster report ("PCFL Rosters"). Sources, newest wins per season:
+ *   drops/<season>/rosters/*.html      roster-only drop (Updater "ROSTER ONLY" mode)
+ *   drops/<season>/week<N>/rosters.html roster export inside a weekly drop
+ * The newest export is chosen by the report's own date line, then folder order
+ * (weeks ascending, then the rosters/ folder, files by name). See buildSeasonRosters().
+ *
+ * Each player spans two lines: line 1 = status, slot (pos+depth), jersey, name, injury,
+ * year, height, weight + 8 ACTUAL ratings (SP AC AG ST HA EN IN DI); line 2 = the same 8
+ * attributes as POTENTIAL ratings (indented, numbers only). Free-agent / draft-pool rows
+ * have no status, depth or jersey. Placeholder "filler" players (every rating 1) are
+ * dropped from the output but counted in _meta.
+ */
+const INJ_STATUS = { P:'Probable', Q:'Questionable', D:'Doubtful', O:'Out' };
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function parseRosterHeader(html){
+  const head = strip(html.split('\n').slice(0, 14).join('\n'));
+  const out = { reportSeason: null, asOf: null, asOfISO: null, phase: null };
+  const s = head.match(/(\d{4})\s+season/i); if (s) out.reportSeason = +s[1];
+  const lines = head.split('\n').map(l => l.trim());
+  const di = lines.findIndex(l => /^[A-Z][a-z]+ \d{1,2}, \d{4}$/.test(l));
+  if (di >= 0){
+    out.asOf = lines[di];
+    const m = lines[di].match(/^([A-Z][a-z]+) (\d{1,2}), (\d{4})$/);
+    const mi = MONTHS.indexOf(m[1]);
+    if (mi >= 0) out.asOfISO = `${m[3]}-${String(mi+1).padStart(2,'0')}-${String(+m[2]).padStart(2,'0')}`;
+    const ph = lines[di+1];
+    if (ph && !/^(Teams|PCFL)/i.test(ph)) out.phase = ph;
+  }
+  return out;
+}
+
+function rosterLabel(meta){
+  const yr = meta.reportSeason ?? meta.season;
+  let when = '';
+  if (meta.asOfISO){
+    const [y, m, d] = meta.asOfISO.split('-').map(Number);
+    when = `${MONTHS[m-1].slice(0,3)} ${d}, ${y}`;
+  }
+  const ph = meta.phase || '';
+  const phaseTxt = /^end of season$/i.test(ph) ? `End of ${yr} season`
+    : /^week\s+\d+$/i.test(ph) ? `${yr} season, ${ph.replace(/^week/i,'Week')}`
+    : /^pre-?season$/i.test(ph) ? `${yr} preseason`
+    : ph ? `${yr} season · ${ph}` : `${yr} season`;
+  return `Rosters as of ${when || 'latest export'} · ${phaseTxt}`;
+}
+
+function parseRosterLine(txt){
+  // Fixed columns from the report header: status 0-2, slot 3-6, jersey 7-10, name 12-32, then
+  // Inj Yr Ht Wt + 8 ratings. A looser regex covers any column drift in other exports.
+  let m = txt.slice(0, 12).match(/^(\S{1,2})?\s+([A-Z]{1,2})(\d*)\s*(\d+)?\s*$/);
+  let name = txt.slice(12, 33).trim();
+  let rest = txt.slice(33).match(/^\s*(\S+)\s+([R0-9]+)\s+(\d+-\d+)\s+(\d+)\s+((?:\d+\s+){7}\d+)\s*$/);
+  if (!m || !rest || !name){
+    const L = txt.match(/^(\S{1,2})?\s+([A-Z]{1,2})(\d*)\s+(\d+)?\s*(\S.*?)\s{2,}(\S+)\s+([R0-9]+)\s+(\d+-\d+)\s+(\d+)\s+((?:\d+\s+){7}\d+)\s*$/);
+    if (!L) return null;
+    m = [null, L[1], L[2], L[3], L[4]]; name = L[5].trim(); rest = [null, L[6], L[7], L[8], L[9], L[10]];
+  }
+  const a = rest[5].trim().split(/\s+/).map(Number);
+  const [ft, inch] = rest[3].split('-').map(Number);
+  const p = {
+    status: m[1] || null, pos: m[2], depth: m[3] ? +m[3] : null, num: m[4] != null ? +m[4] : null,
+    name, inj: rest[1], yr: rest[2], ht: rest[3], wt: +rest[4],
+    a, p: [...a],
+    ovr: Math.round(a.reduce((x,y)=>x+y,0)/a.length),
+    slot: m[2] + (m[3] || ''), htIn: ft * 12 + inch,
+  };
+  const im = String(p.inj).match(/^([A-Z])-(\d+)$/);
+  if (im && p.inj !== 'OK'){ p.injStatus = im[1]; p.injWeeks = +im[2]; }
+  return p;
+}
+
 function parseRosters(html){
-  // Each player spans two lines: line 1 = bio + 8 ACTUAL ratings (SP AC AG ST HA EN IN DI),
-  // line 2 = the same 8 attributes as POTENTIAL ratings (indented, numbers only).
   const lines = html.split('\n');
-  const rosters = {};
-  let cur = null, last = null;
+  const teams = {}, pools = { freeAgents: [], draftPool: [] };
+  const filler = { team: 0, freeAgents: 0, draftPool: 0 };
+  const isFiller = pl => pl.a.every(v => v <= 1) && pl.p.every(v => v <= 1);
+  let cur = null, kind = null, last = null;
+  const flush = () => {
+    if (!last) return;
+    const pl = last; last = null;
+    pl.pot = Math.round(pl.p.reduce((x,y)=>x+y,0)/pl.p.length);
+    if (isFiller(pl)){ filler[kind === 'team' ? 'team' : kind]++; return; }
+    if (kind !== 'team'){ delete pl.status; delete pl.depth; delete pl.num; }
+    cur.push(pl);
+  };
   for (const raw of lines){
     const tm = raw.match(/Team Roster:\s*([^<]+)/i);
     if (tm){
+      flush();
       const slug = teamFrom(tm[1].trim());
-      cur = slug ? (rosters[slug] = []) : null;
-      last = null;
+      if (!slug) console.warn(`  rosters: unknown team "${tm[1].trim()}" skipped`);
+      cur = slug ? (teams[slug] = []) : null; kind = 'team';
       continue;
     }
-    if (/Free Agent Draft Pool/i.test(raw)){ cur = null; last = null; }
+    if (/<A NAME="A\d+">\s*Free Agent (Draft )?Pool/i.test(raw)){ flush(); cur = pools.freeAgents; kind = 'freeAgents'; continue; }
+    if (/<A NAME="A\d+">\s*College Draft Pool/i.test(raw)){ flush(); cur = pools.draftPool; kind = 'draftPool'; continue; }
     if (!cur) continue;
     const txt = strip(raw);
     const pot = txt.match(/^\s{30,}((?:\d+\s+){7}\d+)\s*$/);
     if (pot && last){
       last.p = pot[1].trim().split(/\s+/).map(Number);
-      last = null;
+      flush();
       continue;
     }
-    const m = txt.match(/^([A-Z]{1,2})\s+([A-Z]{1,2}\d*)\s+(\d+)\s+(.{1,22}?)\s{2,}(\S+)\s+([R0-9])\s+(\d+-\d+)\s+(\d+)\s+((?:\d+\s+){7}\d+)\s*$/);
-    if (m){
-      const a = m[9].trim().split(/\s+/).map(Number);
-      last = {
-        status: m[1], pos: m[2].replace(/\d+$/,''), depth: +(m[2].match(/\d+$/)?.[0] ?? 0) || null,
-        num: +m[3], name: m[4].trim(), inj: m[5], yr: m[6], ht: m[7], wt: +m[8],
-        a, p: [...a],
-        ovr: Math.round(a.reduce((x,y)=>x+y,0)/a.length),
-      };
-      cur.push(last);
-    }
+    if (/^\s*Pos\s+Num\s+Name/.test(txt)) continue;
+    const pl = parseRosterLine(txt);
+    if (pl){ flush(); last = pl; }
   }
-  return rosters;
+  flush();
+  return { teams, freeAgents: pools.freeAgents, draftPool: pools.draftPool, filler };
+}
+
+/* Pick the newest roster export for a season and build rosters.json + its _meta. */
+function buildSeasonRosters(season, weekDirs){
+  const cands = [];
+  for (const wd of weekDirs){
+    const p = join(DROPS, season, wd, 'rosters.html');
+    if (existsSync(p)) cands.push({ path: p, rel: `drops/${season}/${wd}/rosters.html`, kind: 'weekly-export', week: num(wd) });
+  }
+  const rdir = join(DROPS, season, 'rosters');
+  if (existsSync(rdir)){
+    for (const f of readdirSync(rdir).filter(f => /\.html?$/i.test(f)).sort())
+      cands.push({ path: join(rdir, f), rel: `drops/${season}/rosters/${f}`, kind: 'roster-drop', week: null });
+  }
+  const valid = [];
+  cands.forEach((c, order) => {
+    const html = read(c.path);
+    if (!/Team Roster:/i.test(html)){ console.warn(`  rosters: ${c.rel} is not an FBPro98 roster report — ignored`); return; }
+    valid.push({ ...c, order, html, header: parseRosterHeader(html) });
+  });
+  if (!valid.length) return null;
+  valid.sort((x, y) => (y.header.asOfISO || '').localeCompare(x.header.asOfISO || '') || y.order - x.order);
+  const pick = valid[0];
+  const parsed = parseRosters(pick.html);
+  if (pick.header.reportSeason && pick.header.reportSeason !== +season)
+    console.warn(`  rosters: ${pick.rel} says "${pick.header.reportSeason} season" but is filed under ${season}`);
+  const players = Object.values(parsed.teams).reduce((s, a) => s + a.length, 0);
+  const meta = {
+    season: +season, ...pick.header,
+    source: pick.rel, sourceKind: pick.kind, week: pick.week,
+    teams: Object.keys(parsed.teams).length, players,
+    freeAgents: { listed: parsed.freeAgents.length, filler: parsed.filler.freeAgents, total: parsed.freeAgents.length + parsed.filler.freeAgents },
+    draftPool:  { listed: parsed.draftPool.length,  filler: parsed.filler.draftPool,  total: parsed.draftPool.length + parsed.filler.draftPool },
+    fillerExcluded: parsed.filler.team + parsed.filler.freeAgents + parsed.filler.draftPool,
+    considered: valid.length,
+  };
+  meta.label = rosterLabel(meta);
+  // Backwards compatible: top-level team-slug keys still map to player arrays (existing
+  // consumers read rosters[slug]); underscore keys can never collide with a slug.
+  const data = { ...parsed.teams, _meta: meta, _freeAgents: parsed.freeAgents, _draftPool: parsed.draftPool };
+  console.log(`✓ ${season} rosters: ${meta.label} — ${players} players / ${meta.teams} teams, ${meta.freeAgents.listed} free agents (+${meta.fillerExcluded} filler hidden) from ${pick.rel}${valid.length > 1 ? ` (newest of ${valid.length})` : ''}`);
+  return { data, meta };
 }
 
 /* ------------------------------------------------------------------ */
@@ -989,7 +1107,7 @@ function computePlayoffPicture(season, schedule, weekJsons){
 async function main(){
   const seasons = readdirSync(DROPS).filter(d=>/^\d{4}$/.test(d));
   const videos = parseVideos(join(ROOT,'scripts','yt-feed.xml'));
-  const manifest = { seasons: [] }; // no timestamp: keep CI output deterministic so the bot only commits real data changes
+  const manifest = { seasons: [], rosters: [] }; // no timestamp: keep CI output deterministic so the bot only commits real data changes
 
   // Attach fight-song metadata before writing teams.json
   for (const tm of TEAMS) if (FIGHT_SONGS[tm.slug]) tm.fightSong = FIGHT_SONGS[tm.slug];
@@ -1003,7 +1121,7 @@ async function main(){
       .sort((a,b)=>num(a)-num(b));
     const weeks = [];
     let prevRanks = null;
-    let latestSchedule = null, latestRosters = null;
+    let latestSchedule = null;
 
     for (const wd of weekDirs){
       const week = num(wd);
@@ -1014,14 +1132,12 @@ async function main(){
       const st = file('standings.html');
       const sc = file('schedule.html');
       const se = file('season.html');
-      const ro = file('rosters.html');
 
       const gameData = gs ? parseGameStats(gs) : { playerOfWeek:null, games:[] };
       const standData = st ? parseStandings(st) : { date:null, standings:[], powerRankings:[] };
       const schedule = sc ? parseSchedule(sc) : [];
       const seasonStats = se ? parseSeason(se) : { leaders:{}, teamStats:{} };
       if (schedule.length) latestSchedule = schedule;
-      if (ro) latestRosters = parseRosters(ro);
 
       // power ranking movement vs previous week
       for (const pr of standData.powerRankings){
@@ -1149,7 +1265,10 @@ async function main(){
     }
 
     if (latestSchedule) writeFileSync(join(DATA,season,'schedule.json'), JSON.stringify(latestSchedule));
-    if (latestRosters) writeFileSync(join(DATA,season,'rosters.json'), JSON.stringify(latestRosters));
+    // Rosters: newest FBPro98 roster export for the season (roster-only drop or weekly export)
+    mkdirSync(join(DATA, season), { recursive: true });
+    const rosterBuild = buildSeasonRosters(season, weekDirs);
+    if (rosterBuild) writeFileSync(join(DATA,season,'rosters.json'), JSON.stringify(rosterBuild.data));
     // Player-of-the-Week season history for the Heisman watch
     writeFileSync(join(DATA, season, 'pow-history.json'), JSON.stringify(Object.values(powHistory)));
 
@@ -1161,7 +1280,12 @@ async function main(){
       if (playoffs){ writeFileSync(join(DATA, season, 'playoffs.json'), JSON.stringify(playoffs)); console.log(`✓ ${season} playoff picture computed (through week ${playoffs.throughWeek})`); }
     }
 
-    manifest.seasons.push({ year:+season, weeks, latest: weeks[weeks.length-1] ?? null });
+    const rm = rosterBuild?.meta;
+    const rosterRef = rm ? { asOf: rm.asOf, asOfISO: rm.asOfISO, phase: rm.phase, label: rm.label, source: rm.source, week: rm.week } : null;
+    if (rm) manifest.rosters.push({ year: +season, ...rosterRef, reportSeason: rm.reportSeason, players: rm.players, freeAgents: rm.freeAgents.listed, hasWeeks: weeks.length > 0 });
+    // A season with only a roster drop (e.g. next season's preseason rosters) has no week data
+    // yet: it is listed under manifest.rosters only, so the season selector never offers empty weeks.
+    if (weeks.length) manifest.seasons.push({ year:+season, weeks, latest: weeks[weeks.length-1] ?? null, ...(rosterRef ? { roster: rosterRef } : {}) });
   }
   writeFileSync(join(DATA,'manifest.json'), JSON.stringify(manifest,null,1));
   console.log('✓ manifest written');
