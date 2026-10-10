@@ -38,6 +38,25 @@ cd PCFL-Football
 Required files in the export folder: `gamestats.html`, `standings.html`,
 `schedule.html`, `season.html`. Optional: `rosters.html`, `teamstats.html`.
 
+### Rosters (refresh anytime)
+
+Rosters come from FBPro98's roster report (`rosters.html`: status, depth slot, jersey,
+injury, year, height/weight, actual **and** potential SP AC AG ST HA EN IN DI ratings,
+plus the free-agent and college-draft pools). Two places are read for each season:
+
+```
+drops/<season>/rosters/*.html        roster-only drop  (PCFL Updater "ROSTER ONLY" mode)
+drops/<season>/week<N>/rosters.html  roster export that ships with a weekly drop
+```
+
+The parser always uses the **newest** export for the season — by the report's own date
+line (e.g. "February 11, 2029 · End of Season"), then folder order (weeks ascending, then
+`rosters/`). Placeholder players whose ratings are all 1 are hidden (counted in `_meta`).
+The chosen source and its date are recorded in `data/manifest.json` (`seasons[].roster`,
+`rosters[]`) so the site can show "Rosters as of Feb 11, 2029 · End of 2028 season".
+A season folder that only has a roster drop (e.g. next season's preseason rosters) is
+listed under `manifest.rosters` only and is what the offseason views show.
+
 To fix a past week (e.g. after a re-sim), just re-export and publish the same
 week number again — the drop is overwritten and the whole site regenerates.
 
@@ -47,13 +66,16 @@ week number again — the drop is overwritten and the whole site regenerates.
 index.html            single-page app shell (hash-routed, zero build step)
 css/site.css          design system (broadcast/ESPN theme)
 js/app.js             router, state, week engine, all views
+js/rosters.js         shared roster module (team-page roster, free agents, data loader)
 data/                 generated JSON  — never edit by hand
   manifest.json       seasons + weeks available
   teams.json          team metadata (colors, divisions, aliases)
   videos.json         PCFL Network YouTube feed cache (auto-mapped to games)
   2028/week<N>.json   games, box scores, standings, power poll, leaders, stories
   2028/schedule.json  full 15-week schedule incl. playoff rounds
-  2028/rosters.json   full rosters with FBPro98 ratings (OVR computed)
+  2028/rosters.json   { <team-slug>: Player[], _meta, _freeAgents, _draftPool } — newest roster
+                      export; Player = status, pos, depth, slot, num, name, inj (+injStatus/
+                      injWeeks), yr, ht, htIn, wt, a[8] actual, p[8] potential, ovr, pot
 drops/                raw FBPro98 exports, archived per season/week
 scripts/parse-fbpro.mjs   the parser/story engine (Node 18+, no dependencies)
 tools/Publish-PCFLWeek.ps1  one-click commissioner publisher

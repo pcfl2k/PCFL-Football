@@ -618,36 +618,75 @@ function refreshFormulaPreview() { const f = S.formulaDraft; const el = $('#rc-f
 const IDEAL_DEPTH = { QB: 3, HB: 4, FB: 2, WR: 6, TE: 3, C: 2, G: 4, T: 4, DE: 4, DT: 4, LB: 6, CB: 5, S: 4, FS: 2, SS: 2, K: 1, P: 1 };
 async function loadRoster(team) {
   if (S.rosterCache?.team === team) return S.rosterCache.data;
-  const seasons = H.App.manifest?.seasons || []; const yr = H.App.season || seasons[seasons.length - 1]?.year;
-  try { const res = await fetch(`data/${yr}/rosters.json`, { cache: 'no-cache' }); const all = await res.json(); const list = Array.isArray(all[team]) ? all[team] : (all[team]?.players || []); S.rosterCache = { team, data: { year: yr, players: list } }; return S.rosterCache.data; }
+  const seasons = H.App.manifest?.seasons || []; let yr = H.App.season || seasons[seasons.length - 1]?.year;
+  try {
+    // Same roster source as the team pages (js/rosters.js): the newest FBPro98 roster export —
+    // in the offseason that is the end-of-season (or newer) roster, potentials included.
+    const R = window.PCFLRoster;
+    if (R) { yr = R.yearFor(H.App); const d = await R.load(yr); S.rosterCache = { team, data: { year: d.year, players: d.teams[team] || [], label: d.label, meta: d.meta } }; return S.rosterCache.data; }
+    const res = await fetch(`data/${yr}/rosters.json`, { cache: 'no-cache' }); const all = await res.json(); const list = Array.isArray(all[team]) ? all[team] : (all[team]?.players || []); S.rosterCache = { team, data: { year: yr, players: list, label: all._meta?.label || '', meta: all._meta || null } }; return S.rosterCache.data;
+  }
   catch (e) { reportClientError(e, 'roster-load'); return { year: yr, players: [] }; }
 }
 function rosterGroups(roster, signedMine) {
   const groups = {}; const norm = p => (p === 'FS' || p === 'SS') ? 'S' : p;
   for (const p of roster.players) { const pos = norm(p.pos); const g = groups[pos] ||= { pos, players: [], seniors: 0, injured: 0, inactive: 0 }; g.players.push(p); if (String(p.yr) === '4') g.seniors++; if (p.status === 'IR' || p.status === 'I' || (p.inj && p.inj !== 'OK')) g.injured++; if (p.status === 'O') g.inactive++; }
-  for (const r of signedMine) { const pos = norm(r.position); (groups[pos] ||= { pos, players: [], seniors: 0, injured: 0, inactive: 0 }).signed = ((groups[pos].signed) || 0) + 1; }
+  for (const r of signedMine) { const pos = norm(r.position); const g = (groups[pos] ||= { pos, players: [], seniors: 0, injured: 0, inactive: 0 }); g.signed = (g.signed || 0) + 1; (g.signees ||= []).push(signeeRow(r)); }
   const avail = [...S.recruits.values()].filter(r => ['OPEN', 'POOL', 'UPCOMING', 'PAUSED'].includes(r.status));
+  const potOf = p => p.pot ?? ((p.p || []).reduce((a, b) => a + b, 0) / 8 || p.ovr || 0);
+  const mean = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : 0;
   return Object.values(groups).map(g => {
     const count = g.players.length, signed = g.signed || 0, ideal = IDEAL_DEPTH[g.pos] || 3;
-    const avgOvr = count ? +(g.players.reduce((s, p) => s + (p.ovr || 0), 0) / count).toFixed(1) : 0;
-    const avgPot = count ? +(g.players.reduce((s, p) => s + ((p.p || []).reduce((a, b) => a + b, 0) / 8 || 0), 0) / count).toFixed(1) : 0;
+    const avgOvr = mean(g.players.map(p => p.ovr || 0));
+    const avgPot = mean(g.players.map(potOf));
+    const starters = g.players.filter(p => p.depth === 1); const starterOvr = mean(starters.map(p => p.ovr || 0)), starterPot = mean(starters.map(potOf));
+    const signeePot = mean((g.signees || []).filter(s => s.pot != null).map(s => s.pot));
     const projected = count - g.seniors + signed;
     const top = avail.filter(r => norm(r.position) === g.pos).sort((a, b) => b.overallPotential - a.overallPotential).slice(0, 3).map(r => ({ name: r.name, stars: r.stars, pot: Math.round(r.overallPotential), bid: r.currentBid || 0 }));
     const need = Math.max(0, ideal - projected) * 3 + (count ? g.seniors / count : 1) * 4 + Math.max(0, 78 - avgPot) / 4 + (projected === 0 ? 6 : 0);
-    return { pos: g.pos, count, seniors: g.seniors, injured: g.injured, inactive: g.inactive, signed, projected, ideal, avgOvr, avgPot, topRecruitsAvailable: top, need: +need.toFixed(1) };
+    return { pos: g.pos, count, seniors: g.seniors, injured: g.injured, inactive: g.inactive, signed, projected, ideal, avgOvr, avgPot, starterOvr, starterPot, signeePot, topRecruitsAvailable: top, need: +need.toFixed(1) };
   }).sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos));
 }
+/** A signed recruit from the service, shaped like a roster row ("2029 signee"). */
+function signeeRow(r) {
+  const full = S.recruits.get(r.id) || r;
+  const ovr = full.overallActual != null ? Math.round(full.overallActual) : null, pot = full.overallPotential != null ? Math.round(full.overallPotential) : null;
+  return { id: r.id, name: r.name || full.name, position: r.position || full.position, stars: r.stars ?? full.stars, price: r.price ?? full.signedAmount, ovr, pot, act: full.act || null, potArr: full.pot || null };
+}
+/** Full roster (FBPro98 export) + this cycle's signees, depth-ordered by position group. */
+function rosterTableHTML(groups, roster) {
+  const yr = S.state?.season?.year || (roster.year + 1);
+  const norm = p => (p === 'FS' || p === 'SS') ? 'S' : p;
+  const byPos = {}, sgByPos = {};
+  for (const p of roster.players) (byPos[norm(p.pos)] ||= []).push(p);
+  for (const r of (S.ledger?.signed || [])) (sgByPos[norm(r.position)] ||= []).push(signeeRow(r));
+  const potOf = p => p.pot ?? Math.round((p.p || []).reduce((a, b) => a + b, 0) / 8 || p.ovr || 0);
+  const yrLbl = y => ({ R: 'RK', 1: 'FR', 2: 'SO', 3: 'JR', 4: 'SR', 5: '5Y' })[y] || esc(y);
+  const flag = p => `${p.status && p.status !== 'A' ? `<span class="rc-tag">${esc(p.status)}</span>` : ''}${p.injStatus || (p.inj && p.inj !== 'OK') ? `<span class="rc-tag outbid">✚ ${esc(p.inj)}</span>` : ''}${String(p.yr) === '4' ? '<span class="rc-tag hot">Graduating</span>' : ''}`;
+  const attrs = (a, p) => ATTRS.map((k, i) => `<td class="attr" title="${ATTR_NAMES[k]}">${a ? `<b class="${rcls(a[i])}">${a[i]}</b><span>${p ? p[i] : ''}</span>` : '—'}</td>`).join('');
+  const rows = groups.map(g => {
+    const pl = [...(byPos[g.pos] || [])].sort((x, y) => (x.depth || 50) + (x.status === 'IR' ? 200 : x.status === 'I' ? 100 : 0) - ((y.depth || 50) + (y.status === 'IR' ? 200 : y.status === 'I' ? 100 : 0)) || y.ovr - x.ovr);
+    return `<tr class="grp"><th colspan="${7 + ATTRS.length}">${esc(g.pos)} <span class="rc-note">${g.count} on roster${g.signed ? ` · +${g.signed} signed` : ''} · avg ${g.avgOvr} → ${g.avgPot}</span></th></tr>`
+      + pl.map(p => `<tr><td>${p.num ?? ''}</td><td class="l"><b>${esc(p.name)}</b> ${flag(p)}</td><td>${esc(p.slot || p.pos)}</td><td>${yrLbl(p.yr)}</td><td>${esc(p.ht || '')} ${p.wt || ''}</td><td><b>${p.ovr}</b></td><td class="pot ${potOf(p) > p.ovr ? 'up' : ''}">${potOf(p)}</td>${attrs(p.a, p.p)}</tr>`).join('')
+      + (sgByPos[g.pos] || []).map(s => `<tr class="signee"><td></td><td class="l"><b class="nm" data-rc="open:${s.id}" style="cursor:pointer">${esc(s.name)}</b> <span class="rc-tag signed">${yr} signee</span> <span class="rc-stars-row s${s.stars}" style="font-size:10px">${s.stars ? stars(s.stars) : ''}</span></td><td>${esc(s.position)}</td><td>RK</td><td></td><td><b>${s.ovr ?? '—'}</b></td><td class="pot up">${s.pot ?? '—'}</td>${attrs(s.act, s.potArr)}</tr>`).join('');
+  }).join('');
+  const total = groups.reduce((s, g) => s + g.count, 0), signed = groups.reduce((s, g) => s + g.signed, 0);
+  return `<details class="rc-rostertable" ${S.rosterTableOpen ? 'open' : ''}><summary>Full roster · ${total} players${signed ? ` + ${signed} ${yr} signee${signed > 1 ? 's' : ''}` : ''}<span class="rc-note">${esc(roster.label || '')}</span></summary>
+    <div class="rc-tablewrap"><table class="rc-rtable"><thead><tr><th>#</th><th class="l">Player</th><th>Slot</th><th>Yr</th><th>Ht/Wt</th><th>OVR</th><th>POT</th>${ATTRS.map(a => `<th title="${ATTR_NAMES[a]}">${a}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></details>`;
+}
+document.addEventListener('toggle', ev => { if (ev.target.matches?.('.rc-rostertable')) S.rosterTableOpen = ev.target.open; }, true);
 function rosterDashboardHTML(groups, roster) {
   const totals = { count: groups.reduce((s, g) => s + g.count, 0), seniors: groups.reduce((s, g) => s + g.seniors, 0), injured: groups.reduce((s, g) => s + g.injured, 0), signed: groups.reduce((s, g) => s + g.signed, 0) };
   const needs = [...groups].sort((a, b) => b.need - a.need).slice(0, 3);
   const bar = g => { const pct = Math.min(100, Math.round(g.projected / g.ideal * 100)); return `<span class="rc-depthbar"><i class="${pct < 60 ? 'bad' : pct < 100 ? 'warn' : ''}" style="width:${pct}%"></i></span>`; };
-  return `<div class="card wide rc-rosterdash"><div class="rc-livehd">Roster disposition · ${esc(T(myTeam()).name)} · ${roster.year} season<span style="margin-left:auto;font-size:11px;color:var(--muted)">${totals.count} players · ${totals.seniors} seniors graduating · ${totals.signed} recruits signed</span></div>
+  return `<div class="card wide rc-rosterdash"><div class="rc-livehd">Roster disposition · ${esc(T(myTeam()).name)} · ${roster.year} season<span style="margin-left:auto;font-size:11px;color:var(--muted)">${totals.count} players · ${totals.seniors} seniors graduating · ${totals.signed} recruits signed${roster.label ? ` · ${esc(roster.label)}` : ''}</span></div>
     <div class="rc-attrition"><div><b>${totals.count}</b><span>On roster</span></div><div><b style="color:var(--red)">−${totals.seniors}</b><span>Attrition (Sr)</span></div><div><b style="color:var(--rc-green)">+${totals.signed}</b><span>Signed ${S.state.season?.year || ''}</span></div><div><b>${totals.count - totals.seniors + totals.signed}</b><span>Projected</span></div><div><b>${totals.injured}</b><span>Injured</span></div><div><b style="color:var(--red)">${needs.map(n => n.pos).join(' · ') || '—'}</b><span>Biggest needs</span></div></div>
     <div class="rc-roster-grid" style="padding:0 14px 14px">
       <div class="card"><div class="rc-charttabs"><button class="rc-chip ${(S.chartMode || 'depth') === 'depth' ? 'on' : ''}" data-rc="chart:depth">Depth vs ideal</button><button class="rc-chip ${S.chartMode === 'attrition' ? 'on' : ''}" data-rc="chart:attrition">Now → projected</button><button class="rc-chip ${S.chartMode === 'quality' ? 'on' : ''}" data-rc="chart:quality">Rating quality</button><button class="rc-chip ${S.chartMode === 'radar' ? 'on' : ''}" data-rc="chart:radar">Unit radar</button><span class="spacer"></span><span class="rc-note">Hover bars for detail · click legend to toggle</span></div><div class="rc-chartwrap"><canvas id="rc-chart" aria-label="Roster chart" role="img"></canvas></div></div>
       <div class="card"><div class="rc-livehd">Recruiting insight<span style="margin-left:auto"><button class="rc-btn sm gold" data-rc="insight">${S.insight ? 'Refresh insight' : 'Generate insight'}</button></span></div>${S.insight ? `<div class="rc-insight"><span class="src">${S.insight.source === 'anthropic' ? 'AI analyst · PCFL Network' : 'Roster analysis'}${S.insight.cached ? ' · cached' : ''}</span>${esc(S.insight.text)}</div>` : `<div class="rc-empty">Summarizes which position groups to target this cycle, based on depth, attrition, ratings and who is still on the board.</div>`}</div>
     </div>
-    <div class="rc-tablewrap" style="padding:0 14px 14px"><table class="rc-posgroups"><thead><tr><th class="l">Group</th><th>Roster</th><th>Sr</th><th>Inj</th><th>Signed</th><th>Projected</th><th class="l">Depth vs ideal</th><th>Avg OVR</th><th>Avg POT</th><th class="l">Best available</th></tr></thead><tbody>${groups.map(g => `<tr class="${needs.includes(g) ? 'need' : ''} ${g.projected < g.ideal * .6 ? 'thin' : ''}"><td class="l"><span class="pos">${g.pos}</span></td><td>${g.count}</td><td>${g.seniors ? `<b style="color:var(--red)">${g.seniors}</b>` : '0'}</td><td>${g.injured}</td><td>${g.signed ? `<b style="color:var(--rc-green)">+${g.signed}</b>` : '0'}</td><td class="proj"><b>${g.projected}</b> / ${g.ideal}</td><td class="l">${bar(g)}</td><td>${g.avgOvr}</td><td>${g.avgPot}</td><td class="l">${g.topRecruitsAvailable.map(r => `${esc(r.name)} <span class="rc-note">${r.stars}★ ${r.pot}${r.bid ? ` · bid ${r.bid}` : ''}</span>`).join('<br>') || '<span class="rc-note">none on board</span>'}</td></tr>`).join('')}</tbody></table></div></div>`;
+    <div class="rc-tablewrap" style="padding:0 14px 14px"><table class="rc-posgroups"><thead><tr><th class="l">Group</th><th>Roster</th><th>Sr</th><th>Inj</th><th>Signed</th><th>Projected</th><th class="l">Depth vs ideal</th><th>Avg OVR</th><th>Avg POT</th><th class="l">Best available</th></tr></thead><tbody>${groups.map(g => `<tr class="${needs.includes(g) ? 'need' : ''} ${g.projected < g.ideal * .6 ? 'thin' : ''}"><td class="l"><span class="pos">${g.pos}</span></td><td>${g.count}</td><td>${g.seniors ? `<b style="color:var(--red)">${g.seniors}</b>` : '0'}</td><td>${g.injured}</td><td>${g.signed ? `<b style="color:var(--rc-green)">+${g.signed}</b>` : '0'}</td><td class="proj"><b>${g.projected}</b> / ${g.ideal}</td><td class="l">${bar(g)}</td><td>${g.avgOvr}</td><td>${g.avgPot}</td><td class="l">${g.topRecruitsAvailable.map(r => `${esc(r.name)} <span class="rc-note">${r.stars}★ ${r.pot}${r.bid ? ` · bid ${r.bid}` : ''}</span>`).join('<br>') || '<span class="rc-note">none on board</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div style="padding:0 14px 14px">${rosterTableHTML(groups, roster)}</div></div>`;
 }
 let chartLib = null;
 async function ensureChart() { if (window.Chart) return window.Chart; if (!chartLib) chartLib = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'; s.onload = () => res(window.Chart); s.onerror = () => rej(new Error('Chart library failed to load')); document.head.appendChild(s); }); return chartLib; }
@@ -661,7 +700,7 @@ async function mountRosterCharts() {
     let cfg;
     if (mode === 'depth') cfg = { type: 'bar', data: { labels, datasets: [{ label: 'Projected depth', data: g.map(x => x.projected), backgroundColor: g.map(x => x.projected < x.ideal * .6 ? red : x.projected < x.ideal ? gold : ink), borderRadius: 4 }, { label: 'Ideal', data: g.map(x => x.ideal), type: 'line', borderColor: muted, borderDash: [4, 4], pointRadius: 2, tension: 0 }] }, options: base };
     else if (mode === 'attrition') cfg = { type: 'bar', data: { labels, datasets: [{ label: 'Roster now', data: g.map(x => x.count), backgroundColor: ink, borderRadius: 4 }, { label: 'Seniors leaving', data: g.map(x => -x.seniors), backgroundColor: red, borderRadius: 4 }, { label: 'Recruits signed', data: g.map(x => x.signed), backgroundColor: green, borderRadius: 4 }, { label: 'Projected', data: g.map(x => x.projected), type: 'line', borderColor: gold, pointBackgroundColor: gold, tension: .3 }] }, options: { ...base, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: '#f0f2f4' } } } } };
-    else if (mode === 'quality') cfg = { type: 'bar', data: { labels, datasets: [{ label: 'Avg actual OVR', data: g.map(x => x.avgOvr), backgroundColor: ink, borderRadius: 4 }, { label: 'Avg potential', data: g.map(x => x.avgPot), backgroundColor: gold, borderRadius: 4 }] }, options: { ...base, scales: { x: { grid: { display: false } }, y: { min: 50, max: 100, grid: { color: '#f0f2f4' } } } } };
+    else if (mode === 'quality') cfg = { type: 'bar', data: { labels, datasets: [{ label: 'Avg actual OVR', data: g.map(x => x.avgOvr), backgroundColor: ink, borderRadius: 4 }, { label: 'Avg potential', data: g.map(x => x.avgPot), backgroundColor: gold, borderRadius: 4 }, { label: 'Starters actual', data: g.map(x => x.starterOvr || null), type: 'line', borderColor: red, pointBackgroundColor: red, showLine: false, pointRadius: 4, pointStyle: 'rectRot' }, { label: 'Starters potential', data: g.map(x => x.starterPot || null), type: 'line', borderColor: gold, pointBackgroundColor: '#fff', pointBorderColor: gold, showLine: false, pointRadius: 4 }, { label: `${S.state?.season?.year || ''} signees potential`.trim(), data: g.map(x => x.signeePot || null), type: 'line', borderColor: green, pointBackgroundColor: green, showLine: false, pointRadius: 5, pointStyle: 'triangle' }] }, options: { ...base, plugins: { ...base.plugins, tooltip: { callbacks: { afterBody: items => { const x = g[items[0]?.dataIndex]; return x ? `${x.count} on roster · growth +${(x.avgPot - x.avgOvr).toFixed(1)}` : ''; } } } }, scales: { x: { grid: { display: false } }, y: { min: 50, max: 100, grid: { color: '#f0f2f4' } } } } };
     else cfg = { type: 'radar', data: { labels, datasets: [{ label: 'Depth (% of ideal)', data: g.map(x => Math.min(150, Math.round(x.projected / x.ideal * 100))), borderColor: red, backgroundColor: 'rgba(214,0,28,.15)', pointBackgroundColor: red }, { label: 'Avg potential', data: g.map(x => x.avgPot), borderColor: gold, backgroundColor: 'rgba(241,190,72,.15)', pointBackgroundColor: gold }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { r: { beginAtZero: true, suggestedMax: 120, ticks: { display: false } } } } };
     S.chart = new Chart(canvas.getContext('2d'), cfg);
   } catch (e) { reportClientError(e, 'chart'); const w = $('.rc-chartwrap'); if (w) w.innerHTML = `<div class="rc-empty">Chart unavailable (${esc(e.message)}). The table below has the same data.</div>`; }

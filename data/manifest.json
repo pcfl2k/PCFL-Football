@@ -19,7 +19,30 @@
     14,
     15
    ],
-   "latest": 15
+   "latest": 15,
+   "roster": {
+    "asOf": "February 11, 2029",
+    "asOfISO": "2029-02-11",
+    "phase": "End of Season",
+    "label": "Rosters as of Feb 11, 2029 · End of 2028 season",
+    "source": "drops/2028/rosters/rosters.html",
+    "week": null
+   }
+  }
+ ],
+ "rosters": [
+  {
+   "year": 2028,
+   "asOf": "February 11, 2029",
+   "asOfISO": "2029-02-11",
+   "phase": "End of Season",
+   "label": "Rosters as of Feb 11, 2029 · End of 2028 season",
+   "source": "drops/2028/rosters/rosters.html",
+   "week": null,
+   "reportSeason": 2028,
+   "players": 1028,
+   "freeAgents": 134,
+   "hasWeeks": true
   }
  ]
 }

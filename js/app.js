@@ -1019,7 +1019,8 @@ VIEWS.teams = async function(){
         <div class="nm">${esc(t.name)}<span data-coach-slot="${t.slug}" data-variant="cpu"></span></div><div class="nick">${esc(t.nickname)}</div>
         <div class="rec">${rankChip(ranks,t.slug)}${wk.records[t.slug]||'0-0'} · ${esc(t.conference)} ${esc(t.division)}</div>
       </a>`).join('')}
-    </div>`;
+    </div>
+    ${PCFLRoster.freeAgentsHTML(await PCFLRoster.load())}`;
 };
 
 VIEWS.team = async function(slug){
@@ -1027,35 +1028,8 @@ VIEWS.team = async function(slug){
   const wk = await weekData();
   const ranks = ranksOf(wk);
   const sched = await getJSON(`data/${App.season}/schedule.json`).catch(()=>[]);
-  const rosters = await getJSON(`data/${App.season}/rosters.json`).catch(()=>({}));
-  const roster = rosters[slug] || [];
+  const rosterData = await PCFLRoster.load();   // newest FBPro98 roster export (js/rosters.js)
   const games = sched.flatMap(w => w.games.filter(g=>g.away===slug||g.home===slug).map(g=>({...g, week:w.week, date:w.date})));
-
-  const OFF = ['QB','HB','FB','WR','TE','C','G','T'], DEF = ['DE','DT','LB','CB','S'];
-  const ATTRS = [['SP','Speed'],['AC','Acceleration'],['AG','Agility'],['ST','Strength'],['HA','Hands'],['EN','Endurance'],['IN','Intelligence'],['DI','Discipline']];
-  const rcls = v => v>=90?'r4':v>=80?'r3':v>=70?'r2':'r1';
-  const STATUS = { A:['Active','st-a'], I:['Inactive','st-i'], O:['O','st-o'], IR:['IR','st-ir'] };
-  const stChip = p => {
-    const [label, cls] = STATUS[p.status] || [p.status, 'st-o'];
-    let h = `<span class="st-chip ${cls}">${esc(label)}</span>`;
-    if (p.inj && p.inj !== 'OK' && p.inj !== p.status) h += ` <span class="st-chip st-ir" title="Injury designation">${esc(p.inj)}</span>`;
-    return h;
-  };
-  const unitOf = p => OFF.includes(p.pos) ? 'offense' : DEF.includes(p.pos) ? 'defense' : 'special';
-  const rosterRows = unit => roster.filter(p=>unitOf(p)===unit)
-    .sort((a,b)=> OFF.concat(DEF,['K','P']).indexOf(a.pos) - OFF.concat(DEF,['K','P']).indexOf(b.pos) || (a.depth||9)-(b.depth||9))
-    .map(p=>`<tr><td>${p.num}</td>
-      <td style="font-weight:600;white-space:nowrap">${esc(p.name)}</td>
-      <td>${esc(p.pos)}${p.depth?`<span style="color:var(--muted-2)">${p.depth}</span>`:''}</td>
-      <td>${esc(p.yr)==='R'?'FR':['','FR','SO','JR','SR'][+p.yr]||esc(p.yr)}</td><td>${esc(p.ht)}</td><td>${p.wt}</td>
-      <td style="white-space:nowrap">${stChip(p)}</td>
-      <td><span class="ovr ${p.ovr>=85?'elite':p.ovr>=78?'good':'avg'}">${p.ovr}</span></td>
-      ${(p.a||[]).map((v,i)=>`<td class="attr"><b class="${rcls(v)}">${v}</b><span>${(p.p||[])[i] ?? ''}</span></td>`).join('')}
-    </tr>`).join('');
-  const rosterHead = `<tr><th>#</th><th>Player</th><th>Pos</th><th>Yr</th><th>Ht</th><th>Wt</th><th title="Roster designation from the FBPro98 roster file">Status</th><th title="Overall — average of the 8 actual ratings">OVR</th>
-    ${ATTRS.map(([k,n])=>`<th class="attr-h" title="${n}">${k}</th>`).join('')}</tr>`;
-  const legend = `<div class="attr-legend">${ATTRS.map(([k,n])=>`<span><b>${k}</b> ${n}</span>`).join('')}
-    <span class="key"><b>Top</b> actual · <b>bottom</b> potential</span></div>`;
 
   const leaders = LEADER_DEFS.map(d => {
     const mine = (wk.leaders[d.key]||[]).filter(p=>p.team===slug);
@@ -1112,25 +1086,8 @@ VIEWS.team = async function(slug){
         <div class="card reveal">${leaders || '<div class="empty">No qualified leaders yet.</div>'}</div>
       </aside>
     </div>
-    <div class="section-h"><span class="bar"></span><h2>Roster</h2><span class="sub">${roster.length} players · FBPro98 actual &amp; potential ratings</span></div>
-    <div class="pill-tabs" id="roster-tabs">
-      <button class="on" data-u="offense">Offense</button><button data-u="defense">Defense</button><button data-u="special">Special Teams</button></div>
-    ${legend}
-    <div class="card reveal roster-card">
-      <table class="roster-table"><thead>${rosterHead}</thead>
-      <tbody id="roster-body" data-slug="${slug}">${rosterRows('offense')}</tbody></table></div>
-    <template id="roster-off">${rosterRows('offense')}</template>
-    <template id="roster-def">${rosterRows('defense')}</template>
-    <template id="roster-st">${rosterRows('special')}</template>`;
+    ${PCFLRoster.teamSectionHTML(slug, rosterData)}`;
 };
-
-document.addEventListener('click', e => {
-  const b = e.target.closest('#roster-tabs button');
-  if (!b) return;
-  document.querySelectorAll('#roster-tabs button').forEach(x=>x.classList.toggle('on', x===b));
-  const tpl = { offense:'#roster-off', defense:'#roster-def', special:'#roster-st' }[b.dataset.u];
-  $('#roster-body').innerHTML = $(tpl).innerHTML;
-});
 
 /* ----------------------------- awards ---------------------------- */
 async function loadPowHistory(season){
@@ -1714,7 +1671,8 @@ function scoreSide(roster, side, cfg){
 VIEWS.compare = async function(_, __, ___, q){
   const wk = await weekData();
   const sos = await getJSON(`data/${App.season}/sos.json`).catch(() => ({}));
-  const rosters = await getJSON(`data/${App.season}/rosters.json`).catch(() => ({}));
+  const rosterData = await PCFLRoster.load();   // same roster source as team pages (js/rosters.js)
+  const rosters = rosterData.teams;
   const aSlug = q.get('a') || 'texas';
   const bSlug = q.get('b') || 'tennessee';
   const tab = q.get('tab') || 'season';
@@ -1922,7 +1880,7 @@ VIEWS.compare = async function(_, __, ___, q){
           <div class="rcmp-otsub">Offense ${sideB.total} · Defense ${defB.total}</div>
         </div>
       </div>
-      <div class="rcmp-otnote">Scoring: starter avg OVR + depth bonus (sum of backup OVRs × 0.04, +2.5 per backup ≥80) − penalties for missing players (−2 per missing starter, −1 if no depth).</div>
+      <div class="rcmp-otnote">Scoring: starter avg OVR + depth bonus (sum of backup OVRs × 0.04, +2.5 per backup ≥80) − penalties for missing players (−2 per missing starter, −1 if no depth). ${esc(rosterData.label)}.</div>
     </div>` : '';
 
   // SEASON-STATS overall winner — only on Season Stats tab. Pure record-based
