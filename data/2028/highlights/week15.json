@@ -1,0 +1,58 @@
+{
+ "season": 2028,
+ "week": 15,
+ "generated": "2026-10-10",
+ "method": "game-clock OCR of the PCFL Network broadcast matched to the FBPro play-by-play; clips verified against the in-game result pop-ups",
+ "games": {
+  "tennessee|texas": [
+   {
+    "q": 1,
+    "clock": "14:45",
+    "team": "Tennessee",
+    "kind": "explosive",
+    "title": "MacIntyre to Davis, 30 yards",
+    "play": "The pass from Tennessee's QB George MacIntyre is caught by TE Ethan Davis for a gain of almost 30 yards. Davis is tackled by Texas's CB Kobe Black. First down, Tennessee! First and 10 to go.",
+    "after": null,
+    "videoId": "jev3cGznWXg",
+    "start": 47,
+    "end": 62
+   },
+   {
+    "q": 4,
+    "clock": "12:56",
+    "team": "Texas",
+    "kind": "turnover",
+    "title": "MacIntyre fumble, January recovers",
+    "play": "Tennessee's QB George MacIntyre fumbles the ball. The ball is recovered by Texas's DT Alex January. January runs for a gain of almost 5 yards. January is tackled by HB Javin Gordan. First down, Texas! First and 10 to go.",
+    "after": null,
+    "videoId": "jev3cGznWXg",
+    "start": 1787,
+    "end": 1800
+   },
+   {
+    "q": 4,
+    "clock": "1:00",
+    "team": "Texas",
+    "kind": "game-winner",
+    "title": "Game-winner: Stone 50-yard field goal",
+    "play": "Texas's K Will Stone attempts a 50 yard field goal. The kick is good.",
+    "after": "Tennessee 21, Texas 22",
+    "videoId": "jev3cGznWXg",
+    "start": 2308,
+    "end": 2320
+   },
+   {
+    "q": 4,
+    "clock": ":27",
+    "team": "Tennessee",
+    "kind": "4th-down stop",
+    "title": "Fourth-down stop: MacIntyre to Thomas, 5 yards short of the sticks",
+    "play": "The pass from Tennessee's QB George MacIntyre is caught by HB Star Thomas for a gain of almost 5 yards. Thomas is tackled by Texas's S Xavier Filsaime. First down, Texas! First and 10 to go.",
+    "after": null,
+    "videoId": "jev3cGznWXg",
+    "start": 2381,
+    "end": 2395
+   }
+  ]
+ }
+}
