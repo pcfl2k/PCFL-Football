@@ -49,16 +49,16 @@ const FIGHT_SONGS = {
   washington:       { youtubeId:'xN2HTCmpeV4', name:'Bow Down to Washington',           start:0,  end:22 },
   usc:              { youtubeId:'cj7IYSv_BVE', name:'Conquest',                          start:0,  end:22 },
   ucla:             { youtubeId:'Mi1rc1zGEQM', name:'Sons of Westwood / Mighty Bruins',  start:0,  end:22 },
-  'arizona-state':  null, // TODO(rebrand): official fight song
+  'arizona-state':  { youtubeId:'kbLIvnst_jk', name:'Maroon and Gold',                   start:0,  end:22 },
   'ohio-state':     { youtubeId:'uDI1qWHqJt4', name:'Buckeye Battle Cry',                start:0,  end:22 },
   'notre-dame':     { youtubeId:'clNTdf8xAtk', name:'Notre Dame Victory March',          start:0,  end:22 },
   colorado:         { youtubeId:'jcTOBFq-2T0', name:'CU Fight Song',                     start:0,  end:22 },
-  'michigan-state': null, // TODO(rebrand): official fight song
+  'michigan-state': { youtubeId:'hbK6KiqkOKQ', name:'Victory for MSU',                   start:0,  end:22 },
   michigan:         { youtubeId:'Oww_gtVVqkQ', name:'The Victors',                       start:0,  end:22 },
   texas:            { youtubeId:'W41tB1nkQtI', name:'The Eyes of Texas',                 start:0,  end:22 },
   'penn-state':     { youtubeId:'wLIuF9E6gcQ', name:'Fight On, State',                   start:0,  end:22 },
   'boston-college': { youtubeId:'qBwkc-x8dYs', name:'For Boston',                        start:0,  end:22 },
-  alabama:          null, // TODO(rebrand): official fight song
+  alabama:          { youtubeId:'hVxc6O2asxM', name:'Yea Alabama',                       start:0,  end:22 },
   lsu:              { youtubeId:'YZ4e35_hdjE', name:'Hey Fightin’ Tigers',          start:0,  end:22 },
   tennessee:        { youtubeId:'ylc2FxBLvz4', name:'Rocky Top',                         start:0,  end:22 },
   arkansas:         { youtubeId:'0hJMyTBFJnI', name:'Arkansas Fight',                    start:0,  end:22 },
@@ -155,7 +155,7 @@ function parseGame(seg){
       if (!txt.trim()) continue;
       const header = SECTIONS.find(s => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`).test(txt.trim()) && /<strong>/i.test(raw));
       const left = txt.slice(0,40), right = txt.slice(40);
-      if (header && !/^(TEX|UGA|LSU|MIA|BC|ARK|CLEM|TENN|MICH|OSU|ND|UCLA|OU|UW|COL|USC|UO|PSU)\s+Total/i.test(txt.trim())){
+      if (header && !/^(TEX|UGA|LSU|MIA|BC|ARK|CLEM|TENN|MICH|OSU|ND|UCLA|OU|UW|COL|USC|UO|PSU|ASU|MSU|ALA)\s+Total/i.test(txt.trim())){
         cur = { name: header, cols: txt.trim().replace(new RegExp(`^${header}\\s*`),'').slice(0,36).trim().split(/\s+/), away: [], home: [] };
         game.box.away.push({ section: header, cols: cur.cols, rows: cur.away });
         game.box.home.push({ section: header, cols: cur.cols, rows: cur.home });

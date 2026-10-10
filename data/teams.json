@@ -89,7 +89,13 @@
    "UO",
    "ORE",
    "OR"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "kbLIvnst_jk",
+   "name": "Maroon and Gold",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "ohio-state",
@@ -177,7 +183,13 @@
    "OKLAHOMA",
    "OU",
    "OKL"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "hbK6KiqkOKQ",
+   "name": "Victory for MSU",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "michigan",
@@ -289,7 +301,13 @@
    "CLEMSON",
    "CLEM",
    "CLE"
-  ]
+  ],
+  "fightSong": {
+   "youtubeId": "hVxc6O2asxM",
+   "name": "Yea Alabama",
+   "start": 0,
+   "end": 22
+  }
  },
  {
   "slug": "lsu",
