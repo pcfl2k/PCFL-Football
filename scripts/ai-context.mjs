@@ -24,7 +24,7 @@ const clean = s => s
   .replace(/\bK \b/g, 'K ')
   .trim();
 
-const STATE = /^(.+?)'s ball on (.+?)\. (First|Second|Third|Fourth) and (goal|\d+)(?: to go)?\. (\d*:\d\d) left in (?:the )?(first|second|third|fourth|overtime)(?: quarter)?\. The score is (.+?) (\d+), (.+?) (\d+)\.\s*$/;
+const STATE = /^(.+?)'s ball on (.+?)\. (First|Second|Third|Fourth) and (goal|(?:less than |just over )?\d+)(?: to go)?\. (\d*:\d\d) left in (?:the )?(first|second|third|fourth|overtime)(?: quarter)?\. The score is (.+?) (\d+), (.+?) (\d+)\.\s*$/;
 
 /**
  * @param {string} text raw .log contents
@@ -59,6 +59,16 @@ export function gameNarrative(text, rename = n => n) {
   // closing sequence: every play in the final 3:00 of regulation (and all of overtime), in order
   const secs = c => { const [m, s] = String(c).split(':'); return (+m || 0) * 60 + (+s || 0); };
   out.closing = [];
+  // yards to the goal line for the offense from a spot like "their 30 yard line" / "Colorado's 17 yard line"
+  const toGoal = st => {
+    const own = st.spot.match(/^their (\d+)/); if (own) return 100 - +own[1];
+    const m = st.spot.match(/^(.+)'s (\d+)/); if (m) return m[1] === st.team ? 100 - +m[2] : +m[2];
+    const mid = st.spot.match(/^the (\d+)/); if (mid) return +mid[1];
+    return null;
+  };
+  const elapsed = (a, b) => (b.q - a.q) * 900 + secs(a.clock) - secs(b.clock);
+  const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  let driveStart = null, driveSnaps = 0;
   let prev = null, playsSince = [], leader = 0;
   const quarterEnd = {};
   const pushScore = (st, plays) => {
@@ -66,7 +76,13 @@ export function gameNarrative(text, rename = n => n) {
     const team = da > 0 ? A : B, pts = da > 0 ? da : db;
     const key = plays.find(p => /Touchdown|field goal|Safety|2-Point|extra point/i.test(p.raw)) || plays[plays.length - 1];
     const kind = /Safety/.test(key?.raw) ? 'safety' : /field goal/.test(key?.raw) ? 'field goal' : /2-Point/.test(key?.raw) ? '2-pt conversion' : /extra point/i.test(key?.raw) ? 'extra point' : 'touchdown';
-    out.scoring.push({ q: prev.q, clock: prev.clock, team, pts, kind, play: key ? key.text : '', score: `${A} ${st.as}, ${B} ${st.bs}` });
+    // offensive scoring drive: snaps, yards and time from the first snap of the possession
+    let drive = null;
+    if ((kind === 'touchdown' || kind === 'field goal') && driveStart && prev.team === team && driveStart.team === team) {
+      const y0 = toGoal(driveStart), y1 = kind === 'field goal' ? toGoal(prev) : 0;
+      if (y0 != null && y1 != null) drive = { snaps: driveSnaps, yards: y0 - y1, time: mmss(Math.max(0, elapsed(driveStart, prev))), from: driveStart.spot };
+    }
+    out.scoring.push({ q: prev.q, clock: prev.clock, team, pts, kind, play: key ? key.text : '', score: `${A} ${st.as}, ${B} ${st.bs}`, drive, nonOffense: prev.team !== team });
   };
   for (const it of items) {
     if (it.kind === 'play') { playsSince.push(it); continue; }
@@ -91,6 +107,10 @@ export function gameNarrative(text, rename = n => n) {
         out.fourthDownStops.push({ q: prev.q, clock: prev.clock, offense: prev.team, spot: prev.spot, dist: prev.dist, play: playsSince.map(p => p.text).join(' ') });
       if (st.q !== prev.q) quarterEnd[prev.q] = `${A} ${st.as}, ${B} ${st.bs}`;
     }
+    // drive bookkeeping: a new possession starts when the offense changes or after any score
+    const scored = prev && (st.as !== prev.as || st.bs !== prev.bs);
+    if (!prev || st.team !== prev.team || scored || (prev.q === 2 && st.q === 3)) { driveStart = st; driveSnaps = 1; }
+    else driveSnaps++;
     const lead = Math.sign(st.as - st.bs);
     if (lead !== 0 && leader !== 0 && lead !== leader) out.leadChanges++;
     if (lead !== 0) leader = lead;
@@ -123,7 +143,7 @@ export function narrativeText(n) {
   L.push('Scoring plays (period, clock remaining, team, play -> score after):');
   const merged = [];
   for (const s of n.scoring) { const last = merged[merged.length - 1]; if (last && last.team === s.team && /extra point|2-pt/.test(s.kind) && last.kind === 'touchdown') { last.score = s.score; last.pat = s.kind; } else merged.push({ ...s }); }
-  for (const s of merged) L.push(`  ${QLABEL(s.q)} ${s.clock} ${s.team} ${s.kind.toUpperCase()}${s.pat === '2-pt conversion' ? ' (+2-pt try good)' : ''}: ${s.play} -> ${s.score}`);
+  for (const s of merged) L.push(`  ${QLABEL(s.q)} ${s.clock} ${s.team} ${s.kind.toUpperCase()}${s.pat === '2-pt conversion' ? ' (+2-pt try good)' : ''}${s.drive ? ` [drive: ${s.drive.snaps} plays, ${s.drive.yards} yards, ${s.drive.time}, started at ${s.drive.from}]` : s.nonOffense ? ' [non-offensive score]' : ''}: ${s.play} -> ${s.score}`);
   if (n.turnovers.length) { L.push('Turnovers:'); for (const t of n.turnovers) L.push(`  ${QLABEL(t.q)} ${t.clock} ${t.kind}, ${t.lost} lost it to ${t.by}: ${t.play}`); }
   else L.push('Turnovers: none.');
   if (n.explosive.length) { L.push('Explosive plays (25+ yards):'); for (const e of n.explosive) L.push(`  ${QLABEL(e.q)} ${e.clock} ${e.team} ${e.yards} yds${e.td ? ' (TD)' : ''}: ${e.play}`); }
@@ -134,7 +154,7 @@ export function narrativeText(n) {
     for (const c of n.closing) L.push(`  ${QLABEL(c.q)} ${c.clock} ${c.offense} ${c.situation} [${c.score}]: ${c.play}`);
   }
   if (n.finalPossession) L.push(`Final possession: ${n.finalPossession.team}, ${QLABEL(n.finalPossession.q)} ${n.finalPossession.clock}, ${n.finalPossession.down} and ${n.finalPossession.dist} at ${n.finalPossession.spot}.`);
-  L.push('Only the events listed above happened as described. Do not describe kickoffs, onside kicks, kneel-downs, timeouts, penalties on specific plays or quarterback changes unless they appear above.');
+  L.push('Only the events listed above happened as described. Do not describe kickoffs, onside kicks, kneel-downs, timeouts, red-zone trips, penalties on specific plays or quarterback changes unless they appear above. Drive lengths, play counts and drive times exist ONLY for the drives marked [drive: ...]; do not state them for any other drive. Do not claim a turnover "led to" points or a run of "unanswered" points unless the scoring list shows it.');
   L.push(`Final: ${n.final}.`);
   return L.join('\n');
 }

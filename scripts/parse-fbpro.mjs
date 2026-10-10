@@ -662,7 +662,7 @@ const AI = (() => {
     provider: 'ollama',
     apiKey: relayTok,
     model: process.env.PCFL_AI_MODEL || 'nemotron-3-ultra:cloud',
-    editorModel: process.env.PCFL_AI_EDITOR_MODEL || 'nemotron-3-super:cloud',
+    editorModel: process.env.PCFL_AI_EDITOR_MODEL || 'gpt-oss:120b-cloud',   // independent fact-check auditor
     endpoint: relayUrl + '/ai/chat',
     enabled: true,
   };
@@ -806,13 +806,28 @@ async function callClaude(prompt, opts = {}){
     if (problems.length) { console.warn(`AI draft still has issues after rewrite: ${problems.join('; ').slice(0, 160)} — discarded`); AI_STATS.failed++; return null; }
     let final = result;
     if (opts.edit && AI.provider === 'ollama'){
-      // Copy-desk pass: a second model checks every claim in the draft against the same data
-      // and fixes what is unsupported (wrong counts, wrong attribution, contradictions).
-      const editPrompt = `${prompt}\n\n---\nDRAFT TO FACT-CHECK (JSON):\n${JSON.stringify(result)}\n\nYou are the copy desk. Check every sentence of the draft against the data above, especially every described EVENT against the OFFICIAL PLAY-BY-PLAY FACTS and its closing sequence. Fix anything not supported by the data: events that are not listed (onside kicks, kneel-downs, kickoffs, timeouts, a player taking a snap he did not take), wrong counts (e.g. touchdowns credited to the wrong player or totals the data does not give), wrong attributions (who threw, ran, caught or intercepted), wrong period/clock, contradictions (e.g. calling 50% "perfect"), or invented details. When unsure, delete the claim rather than guess. Keep the voice, structure and length; change only what is wrong. Return the corrected draft as JSON in exactly the same shape.`;
-      const edited = await aiRequest(editPrompt, { ...opts, model: AI.editorModel, temperature: 0.2 });
-      const editProblems = edited ? (validate ? validate(edited) : []) : ['no reply'];
-      if (edited && !editProblems.length) final = edited;
-      else console.warn(`  copy-desk pass skipped (${editProblems.join('; ').slice(0, 120)}); keeping the checked draft`);
+      // Independent fact-check: a different model lists every claim the data does not support;
+      // the writer then fixes exactly those claims. Up to two rounds. A draft that still has
+      // major problems is discarded (the site falls back to the deterministic write-up).
+      const audit = async draft => {
+        const a = await aiRequest(`${prompt}\n\n---\nDRAFT TO AUDIT:\n${JSON.stringify(draft)}\n\nYou are an independent fact-checker for a sports desk. List every claim in the draft that is NOT supported by the data above: invented events, wrong player or team, wrong number, wrong period or clock, a score at a moment that the scoring list contradicts, drive details not given, causal claims (turnover "led to" points, "unanswered" runs) that the scoring list does not show, and contradictions. Ignore style and opinion. Return JSON: {"unsupported":[{"claim":"exact words from the draft","why":"what the data says"}],"verdict":"clean"|"minor"|"major"}`,
+          { ...opts, model: AI.editorModel, temperature: 0.1, think: 'medium', maxTokens: 3000 });
+        if (!a || !Array.isArray(a.unsupported)) return null;
+        return { issues: a.unsupported.filter(u => u && u.claim), verdict: a.unsupported.length ? (a.verdict === 'clean' ? 'minor' : a.verdict) : 'clean' };
+      };
+      let report = await audit(final);
+      for (let round = 0; report && report.issues.length && round < 2; round++){
+        const fix = `\n\n---\nYOUR DRAFT:\n${JSON.stringify(final)}\n\nAN INDEPENDENT FACT-CHECK FOUND THESE PROBLEMS:\n${report.issues.map((u, i) => `${i + 1}. "${u.claim}" -> ${u.why}`).join('\n')}\n\nRewrite the draft so every listed claim is corrected to match the data or removed. Keep the voice, structure and everything that was accurate. Return the full corrected JSON in the same shape.`;
+        const revised = await aiRequest(prompt + fix, { ...opts, temperature: 0.4 });
+        if (!revised || (validate && validate(revised).length)) break;
+        final = revised;
+        report = await audit(final);
+      }
+      if (report && report.verdict === 'major'){
+        console.warn(`  fact-check still finds major problems (${report.issues.length}) — AI text discarded, deterministic write-up kept`);
+        AI_STATS.failed++; return null;
+      }
+      if (report && report.issues.length) console.log(`  fact-check: ${report.issues.length} minor note(s) remain after revision`);
     }
     result = final;
     writeFileSync(cacheFile, JSON.stringify(result));
@@ -835,7 +850,7 @@ async function aiRequest(prompt, opts = {}){
     fetchOpts = {
       method: 'POST',
       headers: { 'x-pcfl-ai-token': AI.apiKey, 'content-type': 'application/json' },
-      body: JSON.stringify({ system: opts.system || '', prompt: userContent, json: !!opts.parseJSON, maxTokens: opts.maxTokens || 1500, temperature: opts.temperature ?? 0.7, model: opts.model || AI.model }),
+      body: JSON.stringify({ system: opts.system || '', prompt: userContent, json: !!opts.parseJSON, maxTokens: opts.maxTokens || 1500, temperature: opts.temperature ?? 0.7, model: opts.model || AI.model, ...(opts.think ? { think: opts.think } : {}) }),
       signal: AbortSignal.timeout(600000),
     };
   } else if (AI.provider === 'anthropic'){
@@ -1358,7 +1373,15 @@ async function main(){
         g.gameFlow = null;
         if (g.logFile){
           try {
-            const n = gameNarrative(read(join(logsDir, g.logFile)), logTeamName);
+            let n = gameNarrative(read(join(logsDir, g.logFile)), logTeamName);
+            if (n){
+              const want = new Map([[teamName2(g.away.team), +g.away.score], [teamName2(g.home.team), +g.home.score]]);
+              const got = new Map(n.final.split(', ').map(x => { const m = x.match(/^(.*) (\d+)$/); return m ? [m[1], +m[2]] : [x, NaN]; }));
+              if ([...want].some(([t, v]) => got.get(t) !== v)){
+                console.warn(`  log ${g.logFile} ends ${n.final} but the official result is ${[...want].map(([t, v]) => t + ' ' + v).join(', ')} — log ignored for AI facts`);
+                n = null;
+              }
+            }
             if (n){
               const merged = [];
               for (const sc of n.scoring){ const last = merged[merged.length - 1]; if (last && last.team === sc.team && /extra point|2-pt/.test(sc.kind) && last.kind === 'touchdown'){ last.score = sc.score; } else merged.push({ q: sc.q >= 5 ? 'OT' : 'Q' + sc.q, clock: sc.clock, team: sc.team, kind: sc.kind, play: sc.play, score: sc.score }); }

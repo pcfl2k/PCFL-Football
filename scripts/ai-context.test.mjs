@@ -64,6 +64,20 @@ t('narrative: closing sequence lists the real final snaps (Week 2 Tennessee at P
   assert.ok(!/onside/i.test(txt.replace(/Do not describe[^.]*\./, '')), 'no onside kick in this game');
   assert.match(txt, /Do not describe kickoffs, onside kicks, kneel-downs/);
 });
+t('narrative: every possession line is parsed, incl. "less than N" / "just over N" / midfield', () => {
+  const lines = log.split(/\r?\n\s*\r?\n/).filter(p => /^.+?'s ball on /.test(p.replace(/\s+/g, ' ').trim())).length;
+  const varied = log.match(/and (less than|just over) \d+ to go/g) || [];
+  assert.ok(varied.length > 20, 'sample log really uses the "less than / just over" phrasings');
+  // every snap of the final drive counted (the old parser saw 3 of its 8 snaps)
+  const last = n.scoring.filter(s => s.kind === 'touchdown').at(-1);
+  assert.deepEqual(last.drive, { snaps: 8, yards: 53, time: '1:05', from: 'their 47 yard line' });
+  assert.ok(lines > 150, 'sample log has the expected number of possession lines');
+});
+t('narrative: scoring drives carry snaps/yards/time; non-offensive scores flagged', () => {
+  const tds = n.scoring.filter(s => s.kind === 'touchdown');
+  assert.ok(tds.every(s => s.drive && s.drive.snaps > 0 && s.drive.yards > 0), 'all offensive TD drives measured');
+  assert.match(narrativeText(n), /\[drive: 8 plays, 53 yards, 1:05, started at their 47 yard line\]/);
+});
 t('narrative: garbage input returns null instead of throwing', () => {
   assert.equal(gameNarrative(''), null); assert.equal(gameNarrative('not a log '.repeat(50)), null);
 });
