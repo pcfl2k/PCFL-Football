@@ -83,7 +83,7 @@ jobs:
       - name: Stamp build id (cache busting + client freshness check)
         run: |
           STAMP="${GITHUB_SHA::10}-${GITHUB_RUN_NUMBER}"
-          for f in site/index.html site/js/app.js site/staging/index.html site/staging/js/app.js; do
+          for f in site/index.html site/js/*.js site/staging/index.html site/staging/js/*.js; do
             [ -f "$f" ] && sed -i "s/__BUILD__/${STAMP}/g" "$f"
           done
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
