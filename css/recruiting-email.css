@@ -1,0 +1,34 @@
+/* PCFL Recruitment Center — email features (loaded by js/recruiting-email.js) */
+.rc-forgot { margin-left: auto; font-size: 12.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.rc-forgot:hover { color: var(--red); }
+.rc-em-login { font-family: Consolas, monospace; font-size: 15px; font-weight: 700; letter-spacing: .04em; padding: 6px 0; }
+
+.rc-em-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 14px; flex-wrap: wrap; }
+.rc-em-tabs button { background: transparent; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; font-family: var(--font-head); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
+.rc-em-tabs button.on { color: var(--ink); border-bottom-color: var(--red); }
+.rc-em-tabs button:hover:not(.on) { color: var(--ink); }
+.rc-em-banner { background: rgba(201,138,0,.12); border-left: 4px solid var(--gold); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5; margin-bottom: 14px; color: var(--ink); }
+.rc-em-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.rc-em-count { margin-top: 10px; }
+.rc-em-warn { color: var(--red); font-weight: 600; }
+.rc-em-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; margin-top: 10px; max-height: 260px; overflow-y: auto; padding: 2px; }
+.rc-em-pick label { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; cursor: pointer; font-size: 12.5px; }
+.rc-em-pick label:has(input:checked) { border-color: var(--red); background: rgba(214,0,28,.05); }
+.rc-em-pick label.off { opacity: .55; }
+.rc-em-pick img { width: 24px; height: 24px; }
+.rc-em-pick span { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.rc-em-pick small { color: var(--muted); font-size: 11px; }
+.rc-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 9px; font: inherit; font-size: 13.5px; line-height: 1.55; resize: vertical; min-height: 160px; box-sizing: border-box; }
+.rc-form textarea:focus, .rc-form input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(214,0,28,.12); }
+.rc-em-frame { width: 100%; height: 460px; border: 1px solid var(--line); border-radius: 8px; background: #eef0f4; }
+.rc-em-check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; margin: 14px 0 0; line-height: 1.45; cursor: pointer; }
+.rc-em-check input { margin-top: 3px; }
+.rc-em-check input:disabled + * { opacity: .6; }
+.rc-em-sent { font-size: 40px; text-align: center; color: var(--red); line-height: 1; margin: 6px 0 10px; }
+.rc-em-coach { white-space: nowrap; }
+.rc-btn.sm.rc-em-ico { padding: 6px 9px; font-size: 13px; line-height: 1; min-width: 30px; }
+.rc-em-addr { font-size: 11px; line-height: 1.3; }
+@media (max-width: 640px) {
+  .rc-forgot { margin-left: 0; width: 100%; }
+  .rc-em-frame { height: 380px; }
+}
