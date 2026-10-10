@@ -122,6 +122,8 @@ function closeModal() { const ov = $('.rc-overlay'); if (ov) { document.removeEv
 export function render(ctx) {
   H = ctx; S.sub = ctx.sub || 'board';
   if (['board', 'ledger', 'signed', 'rankings', 'admin', 'settings'].includes(S.sub)) S.view = S.sub; else S.view = 'board';
+  // [email] password reset link: #/recruiting/reset/<token> — keep the token in memory/session and out of the address bar
+  if (S.sub === 'reset') { S.view = 'reset'; if (ctx.id) { S.resetToken = ctx.id; try { sessionStorage.setItem('pcfl-rc-reset', ctx.id); history.replaceState(null, '', location.pathname + location.search + '#/recruiting/reset'); } catch {} } }
   setTimeout(mount, 0);
   return `<div id="rc-root" class="rc"><div class="empty card" style="margin-top:30px"><b>Connecting to the Recruitment Center…</b></div></div>`;
 }
@@ -232,6 +234,7 @@ async function draw() {
     else if (S.view === 'rankings') body = await rankingsHTML();
     else if (S.view === 'admin') body = isCommish() ? await adminHTML() : loginHTML('Commissioner sign-in required');
     else if (S.view === 'settings') body = S.me ? changePwHTML(false) : loginHTML();
+    else if (S.view === 'reset') body = (await EMAIL)?.resetHTML() || loginHTML('Password reset is unavailable right now.');   // [email]
     else body = boardHTML();
     const lost = S.sessionLost && !S.me ? `<div class="card rc-sessionlost reveal in"><span class="ic">⚠</span><div><b>You were signed out.</b> ${esc(S.sessionLost)} ${S.state?.season?.visibility === 'current' ? 'Until you sign in, only players from rounds that have already opened are shown.' : ''}</div><button class="rc-btn primary sm" data-rc="login">Sign in</button><button class="x" data-rc="dismisslost" title="Dismiss">×</button></div>` : '';
     root.innerHTML = heroHTML() + subnavHTML() + lost + body + massHTML();
@@ -892,3 +895,7 @@ ACTIONS.settings = () => { if (isCommish() && S.view === 'admin') { const s = S.
 ACTIONS.dosettings = async () => { try { await api('/admin/seasons/current', { method: 'PATCH', body: { name: $('#rc-set-name').value, windowHours: +$('#rc-set-hours').value, rollingBids: $('#rc-set-rolling').value === '1', poolBidHours: +$('#rc-set-pool').value, visibility: $('#rc-set-vis').value, defaultAllocation: +$('#rc-set-alloc').value, allowWithdrawal: $('#rc-set-wd').value === '1', escalationOn: $('#rc-set-esc').value === '1', escalationAfter: +$('#rc-set-esc-after').value, escalationBase: +$('#rc-set-esc-base').value, escalationEvery: +$('#rc-set-esc-every').value, escalationCap: +$('#rc-set-esc-cap').value } }); closeModal(); toast('✓ Recruiting settings saved', '', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } };
 window.addEventListener('error', e => { if (location.hash.startsWith('#/recruiting') && String(e.filename || '').includes('recruiting')) reportClientError(e.error || e.message, 'window'); });
 function bindLogin() { $$('[data-rc-enter]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') ACTIONS[i.dataset.rcEnter](); })); $('#rc-login-pw')?.focus(); }
+// [email] forgot/reset password + commissioner email tools (js/recruiting-email.js); a load failure never affects the rest of the module
+const EMAIL = import('./recruiting-email.js?v=__BUILD__')
+  .then(m => { m.installEmail({ S, api, esc, $, $$, modal, closeModal, toast, T, logo, nav, draw, loadState, connectSSE, fmtDate, TOKEN_KEY, ACTIONS, isCommish, CFG }); return m; })
+  .catch(e => { reportClientError(e, 'email-module'); return null; });
