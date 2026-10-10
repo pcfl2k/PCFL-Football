@@ -1,0 +1,23 @@
+{
+ "note": "Offline fallback for the #/coaches page and team headers. The live directory is the Recruitment Center service (GET /coaches). First names and flags only: coach emails never belong in this public repo.",
+ "coaches": [
+  { "team": "washington", "coachFirstName": "Mark", "cpu": false, "commissioner": false },
+  { "team": "usc", "coachFirstName": "Neil", "cpu": false, "commissioner": false },
+  { "team": "ucla", "coachFirstName": "Steve", "cpu": false, "commissioner": false },
+  { "team": "arizona-state", "coachFirstName": "Donovon", "cpu": false, "commissioner": false },
+  { "team": "ohio-state", "coachFirstName": "Barney", "cpu": false, "commissioner": false },
+  { "team": "notre-dame", "coachFirstName": "Shawn", "cpu": false, "commissioner": false },
+  { "team": "colorado", "coachFirstName": "Brian", "cpu": false, "commissioner": false },
+  { "team": "michigan-state", "coachFirstName": "Tonje", "cpu": false, "commissioner": false },
+  { "team": "michigan", "coachFirstName": "James", "cpu": false, "commissioner": false },
+  { "team": "texas", "coachFirstName": "Justin", "cpu": false, "commissioner": false },
+  { "team": "penn-state", "coachFirstName": null, "cpu": true, "commissioner": false },
+  { "team": "boston-college", "coachFirstName": "Stephen", "cpu": false, "commissioner": false },
+  { "team": "alabama", "coachFirstName": null, "cpu": true, "commissioner": false },
+  { "team": "lsu", "coachFirstName": null, "cpu": true, "commissioner": false },
+  { "team": "tennessee", "coachFirstName": "Dean", "cpu": false, "commissioner": true },
+  { "team": "arkansas", "coachFirstName": "Matt", "cpu": false, "commissioner": false },
+  { "team": "georgia", "coachFirstName": null, "cpu": true, "commissioner": false },
+  { "team": "miami", "coachFirstName": "Mitch", "cpu": false, "commissioner": false }
+ ]
+}
