@@ -58,7 +58,9 @@ jobs:
           PCFL_AI_URL: ${{ secrets.PCFL_AI_URL }}
           PCFL_AI_TOKEN: ${{ secrets.PCFL_AI_TOKEN }}
           # new AI recaps (free VPS Ollama, ~1-3 min each) are generated only for the live site
-          PCFL_AI_CACHE_ONLY: ${{ github.ref != 'refs/heads/main' && '1' || '' }}
+          # repo variable PCFL_AI_MODE=cache-only keeps production builds fast (reuse written content only);
+          # set it to 'generate' (or delete it) to let production builds write new AI content again
+          PCFL_AI_CACHE_ONLY: ${{ (github.ref != 'refs/heads/main' || vars.PCFL_AI_MODE == 'cache-only') && '1' || '' }}
 
       - name: Share AI cache with staging (no regeneration of the same prompts)
         run: |
