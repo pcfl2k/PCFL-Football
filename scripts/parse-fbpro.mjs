@@ -764,7 +764,7 @@ function aiFatal(status, body){
 }
 process.on('exit', () => {
   if (!AI.enabled) return;
-  const line = `AI content: ${AI_STATS.cached} from cache, ${AI_STATS.generated} newly generated, ${AI_STATS.failed + AI_STATS.skipped} missing`;
+  const line = `AI content: ${AI_STATS.cached} from cache, ${AI_STATS.generated} newly generated, ${AI_STATS.keptPrevious || 0} kept from the previous version, ${AI_STATS.failed + AI_STATS.skipped} new items not generated`;
   console.log('ℹ ' + line);
   if (AI_STATS.fatal) console.log(`::warning title=AI recaps not generated::${AI_STATS.fatal} — ${AI_STATS.failed + AI_STATS.skipped} AI recaps/previews/wraps fell back to deterministic text. Fix the account, then re-run this workflow; cached content is unaffected.`);
 });
@@ -773,10 +773,12 @@ const LEGACY_AI = [['anthropic', 'claude-haiku-4-5-20251001'], ['huggingface', '
 let relayChain = Promise.resolve();   // the VPS model runs one generation at a time; don't stack up timeouts
 async function callClaude(prompt, opts = {}){
   if (!AI.enabled) return null;
-  const keyFor = (provider, model) => createHash('sha256').update(provider + '\n' + model + '\n' + JSON.stringify(opts) + '\n' + prompt).digest('hex').slice(0, 16);
+  // cache keys hash the content options only, never control flags (cacheOnly/validate/model routing)
+  const { cacheOnly: _c, validate: _v, model: _m, think: _t, temperature: _tp, ...contentOpts } = opts;
+  const keyFor = (provider, model) => createHash('sha256').update(provider + '\n' + model + '\n' + JSON.stringify(contentOpts) + '\n' + prompt).digest('hex').slice(0, 16);
   // v2 prompts (grounded in play-by-play + season stats) are cached by prompt only, so
   // switching AI providers/models never throws away or regenerates finished writing.
-  const { validate, ...keyOpts } = opts;
+  const { validate, cacheOnly: _c2, ...keyOpts } = opts;
   const v2Key = createHash('sha256').update('pcfl-ai-v2\n' + JSON.stringify(keyOpts) + '\n' + prompt).digest('hex').slice(0, 16);
   const cacheFile = join(aiCacheDir(opts.season || 'global'), (opts.v2 ? v2Key : keyFor(AI.provider, AI.model)) + '.json');
   if (opts.v2 && existsSync(cacheFile)){
@@ -790,6 +792,7 @@ async function callClaude(prompt, opts = {}){
       try { const hit = JSON.parse(readFileSync(f, 'utf8')); AI_STATS.cached++; return hit; } catch {}
     }
   }
+  if (opts.cacheOnly) return null;
   if (AI_STATS.fatal || AI_CACHE_ONLY){ AI_STATS.skipped++; return null; }
   mkdirSync(aiCacheDir(opts.season || 'global'), { recursive: true });
 
@@ -979,9 +982,15 @@ Return ONLY JSON in this exact shape:
   "keyMatchup": "one sentence on the chess-match angle",
   "body": ["paragraph 1 (2-3 sentences)", "paragraph 2 (2-3 sentences)"]
 }`;
-  const r = cur
+  let r = cur
     ? await callClaude(prompt, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 1100, season, v2: true, validate: numberGuard(prompt, ['headline', 'subhead', 'xFactor', 'keyMatchup', 'body']) })
     : await callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 900, season });
+  if (!r && cur){
+    // keep the preview already published (it was written from the pre-v2 prompt)
+    const old = prompt.replace(/\n\nSEASON PROFILES[\s\S]*?Use only numbers from the data\.\n/, '\n');
+    r = await callClaude(old, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 900, season, cacheOnly: true });
+    if (r) AI_STATS.keptPrevious = (AI_STATS.keptPrevious || 0) + 1;
+  }
   return r;
 }
 
@@ -1047,13 +1056,15 @@ Return ONLY JSON in this shape:
   "byTheNumbers": ["3 or 4 short analytical notes, each built on one stat from the data and why it mattered"],
   "unsungHero": { "name": "player name from the data", "team": "${aw.team}" | "${hm.team}", "why": "why he mattered beyond the headline numbers" }
 }`;
-    return callClaude(prompt2, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 1800, season, v2: true, edit: true,
+    const v2 = await callClaude(prompt2, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 1800, season, v2: true, edit: true,
       validate: out => {
         const problems = [];
         if (!out || !Array.isArray(out.body) || out.body.length < 3) problems.push('body must be an array of at least 3 paragraphs');
         if (out && !out.headline) problems.push('missing headline');
         return problems.concat(numberGuard(prompt2, ['headline', 'dek', 'body', 'turningPoint', 'byTheNumbers', 'unsungHero'])(out));
       } });
+    if (v2) return v2;
+    ctx.fallback = true;   // fall through: reuse the recap already published for this game (cache only, no new call)
   }
 
   const prompt = `Write a richer broadcast recap of a PCFL Week ${week} game.
@@ -1083,7 +1094,9 @@ Return ONLY JSON in this shape:
   "turningPoint": "one sentence on the decisive moment or shift",
   "unsungHero": { "name": "player name from the stats above", "team": "${aw.team}" | "${hm.team}", "why": "why they don't get the credit POG gets" }
 }`;
-  return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 1200, season });
+  const legacy = await callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 1200, season, cacheOnly: !!ctx?.fallback });
+  if (legacy && ctx?.fallback) AI_STATS.keptPrevious = (AI_STATS.keptPrevious || 0) + 1;
+  return legacy;
 }
 
 /* -------------------- Weekly wrap-up article --------------------- */
@@ -1144,9 +1157,13 @@ Return ONLY JSON in this exact shape:
 }
 
 Produce 3 to 5 segments. Each segment's "teams" array must use 1 or 2 of the valid slugs above.`;
-  return ctx
-    ? callClaude(prompt, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 2200, season, v2: true, edit: true, validate: numberGuard(prompt, ['headline', 'subhead', 'lead', 'segments', 'closer']) })
-    : callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 2000, season });
+  if (!ctx) return callClaude(prompt, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 2000, season });
+  const v2 = await callClaude(prompt, { system: SYS_BROADCAST_V2, parseJSON: true, maxTokens: 2200, season, v2: true, edit: true, validate: numberGuard(prompt, ['headline', 'subhead', 'lead', 'segments', 'closer']) });
+  if (v2) return v2;
+  const old = prompt.replace(/\nHow each game unfolded \(from the play-by-play\):[\s\S]*?Only numbers from the data\.\n/, '');
+  const prev = await callClaude(old, { system: SYS_BROADCAST, parseJSON: true, maxTokens: 2000, season, cacheOnly: true });
+  if (prev) AI_STATS.keptPrevious = (AI_STATS.keptPrevious || 0) + 1;
+  return prev;
 }
 
 /* ================================================================== */
