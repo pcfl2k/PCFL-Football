@@ -84,6 +84,7 @@ function enhance() {
   if (prov && !prov.querySelector('#rc-prov-email')) {
     const withEmail = (X.S.adminData?.teams || []).filter(t => !t.cpu && t.coachEmail).length;
     prov.querySelector('.rc-mactions')?.insertAdjacentHTML('beforebegin', `<label class="rc-em-check"><input type="checkbox" id="rc-prov-email" ${X.S.demo ? 'disabled' : 'checked'}> Email each coach their new temporary password <span class="rc-note">(${withEmail} coaches with an email; CPU teams are skipped)</span></label>`);
+    if (!X.S.demo) prov.querySelector('.rc-mactions')?.insertAdjacentHTML('afterbegin', `<button class="rc-btn gold" data-rc="emailalllogins" title="Email every coach their login without resetting anything">✉ Email all logins</button>`);
   }
   // System health → Email row
   const health = $$('.rc-modal').find(m => /System health/i.test(m.querySelector('.rc-mhead h3')?.textContent || ''));
@@ -223,12 +224,13 @@ const recipientsPayload = () => C.rcpt === 'pick' ? [...C.picked] : C.rcpt;
 async function doProvision(mode) {
   const email = !!$('#rc-prov-email')?.checked;
   if (!email) return ACTIONS._origProvision(mode);
-  if (mode === 'reset' && !confirm('Reset every franchise password, sign everyone out, and email each coach the new temporary password?')) return;
+  if (mode === 'reset' && !await X.ask('Reset every franchise password, sign everyone out, and email each coach the new temporary password?', { title: 'Reset all passwords', ok: 'Reset and email' })) return;
   try {
     const out = await X.api('/admin/teams/provision', { method: 'POST', body: { reset: mode === 'reset', email: true } });
     X.closeModal();
     const e = out.emailed || { queued: 0, skipped: { cpu: 0, noEmail: [] } };
-    X.toast('✓ Passwords issued', `${out.issued.length} logins updated · ${e.queued} emailed${e.skipped.cpu ? ` · ${e.skipped.cpu} CPU skipped` : ''}${e.skipped.noEmail.length ? ` · no email: ${e.skipped.noEmail.map(teamName).join(', ')}` : ''}`, 'ok', 9000);
+    if (!out.issued.length) X.toast('No new passwords', 'Every franchise already has a password. Use ✉ Email all logins to send each coach their login, or Reset ALL passwords to issue new ones.', 'info', 10000);
+    else X.toast(e.queued ? '✓ Passwords issued and emailed' : 'Passwords issued — no email sent', `${out.issued.length} logins updated · ${e.queued} emailed${e.skipped.cpu ? ` · ${e.skipped.cpu} CPU skipped` : ''}${e.skipped.noEmail.length ? ` · no email: ${e.skipped.noEmail.map(teamName).join(', ')}` : ''}`, e.queued ? 'ok' : 'err', 10000);
     X.draw();
   } catch (err) { X.toast('Not issued', err.message, 'err'); }
 }
@@ -279,7 +281,7 @@ const ACTIONS = {
   emsend: async (_, el) => {
     readDraft(); const errEl = $('#rc-em-err');
     const n = selection(X.S.adminData.teams).to.length;
-    if (!confirm(`Send "${C.subject}" to ${n} coach${n === 1 ? '' : 'es'}?`)) return;
+    if (!await X.ask(`Send "${C.subject}" to ${n} coach${n === 1 ? '' : 'es'}?`, { title: 'Send message', ok: 'Send' })) return;
     el.disabled = true;
     try {
       const out = await X.api('/admin/email', { method: 'POST', body: { recipients: recipientsPayload(), subject: C.subject, body: C.body } });
@@ -315,7 +317,9 @@ const ACTIONS = {
     try {
       const out = await X.api('/admin/email/logins', { method: 'POST', body: {} });
       const tp = out.sent.filter(x => x.kind === 'temp-password').length;
-      X.closeModal(); X.toast('✓ Login emails queued', `${out.sent.length} coaches: ${tp} temporary passwords, ${out.sent.length - tp} reminders${out.mail !== 'ready' ? ' · mail is not sending yet — check Mail status' : ''}`, 'ok', 9000);
+      X.closeModal();
+      if (!out.sent.length) X.toast('No emails sent', 'No human coach has an email address on file. Add them with ✎ in the franchise table.', 'err', 10000);
+      else X.toast(out.mail === 'ready' ? '✓ Login emails sent' : 'Login emails queued — mail is not sending', `${out.sent.length} coaches: ${tp} temporary passwords, ${out.sent.length - tp} reminders${out.mail !== 'ready' ? ' · open Mail status and run Test connection' : ''}`, out.mail === 'ready' ? 'ok' : 'err', 10000);
     } catch (e) { if (el) el.disabled = false; X.toast('Not sent', e.message, 'err'); }
   },
   emaillogin: slug => {

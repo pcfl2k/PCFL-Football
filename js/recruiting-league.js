@@ -160,7 +160,7 @@ async function preview() {
 
 async function generate() {
   const p = L.preview; if (!p || L.busy) return;
-  if (!confirm(`Generate a new league package?\n\n+${p.summary.added} recruits added, ${p.summary.released} released, ${p.summary.leftOut} left out.\nThe uploaded base files are not modified; a new zip is created and self-checked.`)) return;
+  if (!await (C.ask || (m => Promise.resolve(confirm(m))))(`Generate a new league package?\n\n+${p.summary.added} recruits added, ${p.summary.released} released, ${p.summary.leftOut} left out.\nThe uploaded base files are not modified; a new zip is created and self-checked.`)) return;
   L.busy = true;
   try {
     const r = await C.api('/admin/league/generate', { method: 'POST', body: { baseId: L.base.id, ...L.options } });

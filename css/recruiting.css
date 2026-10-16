@@ -411,3 +411,8 @@
 .rc-hiddenchip:hover { background: #ffefcc; color: #5a3a00; }
 .rc-war { color: var(--rc-amber, #c98a00); font-weight: 600; white-space: nowrap; }
 .rc-escnote { margin-top: 8px; padding: 8px 10px; background: #fff7e6; border: 1px solid #f1be48; border-radius: 6px; color: #5a3a00; }
+
+/* in-page confirmation (stacks above an open modal) + busy buttons */
+.rc-overlay.rc-ask{z-index:350}
+.rc-ask-msg{white-space:pre-line}
+.rc-btn.rc-busy{opacity:.6;cursor:progress;pointer-events:none}

@@ -116,7 +116,32 @@ function modal(html, cls = '') {
   const esc_ = e => { if (e.key === 'Escape') closeModal(); }; document.addEventListener('keydown', esc_); ov._esc = esc_;
   return ov;
 }
-function closeModal() { const ov = $('.rc-overlay'); if (ov) { document.removeEventListener('keydown', ov._esc); ov.remove(); document.body.style.overflow = ''; } }
+function closeModal() { const ov = $('.rc-overlay:not(.rc-ask)'); if (ov) { document.removeEventListener('keydown', ov._esc); ov.remove(); if (!$('.rc-overlay')) document.body.style.overflow = ''; } }
+/** In-page confirmation. Replaces window.confirm(), which some browsers and in-app web views
+ *  suppress — they answer "Cancel" without showing anything, so the action silently never ran. */
+function ask(message, { title = 'Please confirm', ok = 'Confirm' } = {}) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div'); ov.className = 'rc-overlay rc-ask';
+    ov.innerHTML = `<div class="rc-modal sm" role="alertdialog" aria-modal="true"><div class="rc-mhead"><div><h3>${esc(title)}</h3></div></div><div class="rc-mbody"><p class="rc-ask-msg">${esc(message)}</p><div class="rc-mactions"><button class="rc-btn ghost" data-ask="0">Cancel</button><button class="rc-btn primary" data-ask="1">${esc(ok)}</button></div></div></div>`;
+    const done = v => { document.removeEventListener('keydown', key, true); ov.remove(); if (!$('.rc-overlay')) document.body.style.overflow = ''; resolve(v); };
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    ov.addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-ask]'); if (b) done(b.dataset.ask === '1'); else if (e.target === ov) done(false); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+    ov.querySelector('[data-ask="1"]').focus();
+  });
+}
+/** Run a data-rc action: repeat clicks are ignored while it runs, and a failure is always shown. */
+function runAction(act, arg, el, e) {
+  const fn = ACTIONS[act]; if (!fn) return;
+  if (el?.dataset.busy) return;
+  const failed = err => { toast('That did not go through', err?.message || String(err), 'err', 9000); if (!err?.code) reportClientError(err, 'action:' + act); };
+  let r; try { r = fn(arg, el, e); } catch (err) { failed(err); return; }
+  if (!r || typeof r.then !== 'function') return;
+  const btn = el && el.tagName === 'BUTTON' ? el : null;
+  if (btn) { btn.dataset.busy = '1'; btn.setAttribute('aria-busy', 'true'); btn.classList.add('rc-busy'); }
+  r.catch(failed).finally(() => { if (btn) { delete btn.dataset.busy; btn.removeAttribute('aria-busy'); btn.classList.remove('rc-busy'); } });
+}
 
 /* ------------------------------------------------------------ entry */
 export function render(ctx) {
@@ -132,7 +157,7 @@ async function mount() {
   if (!S.bound) {
     S.bound = true;
     window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/recruiting')) teardown(); });
-    document.addEventListener('click', e => { const a = e.target.closest('[data-rc]'); if (a) { e.preventDefault(); const [act, arg] = a.dataset.rc.split(':'); ACTIONS[act]?.(arg, a, e); } });
+    document.addEventListener('click', e => { const a = e.target.closest('[data-rc]'); if (a) { e.preventDefault(); const [act, arg] = a.dataset.rc.split(':'); runAction(act, arg, a, e); } });
     document.addEventListener('change', e => { const a = e.target.closest('[data-rcc]'); if (a) { const [act, arg] = a.dataset.rcc.split(':'); ACTIONS[act]?.(arg, a, e); } });
     document.addEventListener('input', e => { const a = e.target.closest('[data-rci]'); if (a) { const [act, arg] = a.dataset.rci.split(':'); ACTIONS[act]?.(arg, a, e); } });
   }
@@ -772,7 +797,7 @@ function readMapping() {
 const ACTIONS = {
   retry: () => mount(),
   // league files (feat/league-reconcile): FBPro98 package from signed recruits — module js/recruiting-league.js
-  league: async () => { try { const m = await import(new URL('js/recruiting-league.js?v=__BUILD__', document.baseURI).href); await m.open({ api, apiBase: CFG.apiBase, token: () => S.token, demo: S.demo, modal, closeModal, toast, esc, T }); } catch (e) { reportClientError(e, 'league-files'); toast('League files', e.message, 'err'); } },
+  league: async () => { try { const m = await import(new URL('js/recruiting-league.js?v=__BUILD__', document.baseURI).href); await m.open({ api, apiBase: CFG.apiBase, token: () => S.token, demo: S.demo, modal, closeModal, ask, toast, esc, T }); } catch (e) { reportClientError(e, 'league-files'); toast('League files', e.message, 'err'); } },
   login: () => { closeModal(); const root = $('#rc-root'); root.innerHTML = heroHTML() + loginHTML(); bindLogin(); },
   loginlogo: (_, el) => { const slug = el.selectedOptions[0].dataset.slug; const img = $('#rc-login-logo'); if (img) { img.style.visibility = slug ? '' : 'hidden'; if (slug) img.src = logo(slug); } },
   dologin: async () => {
@@ -818,7 +843,7 @@ const ACTIONS = {
   bid: id => openPlayer(+id),
   reviewbid: arg => { const [id, preset] = String(arg).split('|'); const amt = preset ? +preset : Math.trunc(+$('#rc-bid-amt')?.value); const r = S.recruits.get(+id); if (!(amt >= minBidFor(r))) { toast('Bid too low', `Minimum bid is ${minBidFor(r)}${r.leader !== myTeam() && r.minRaise > 1 ? ` (bid war: the lead has changed ${r.leadChanges} times, so it takes at least +${r.minRaise} to take it)` : ''}.`, 'err', 6000); return; } if (!Number.isInteger(amt) || amt < 1) return; reviewBid(id, amt); },
   confirmbid: arg => { const [id, amt, exp] = arg.split('|'); confirmBid(+id, +amt, +exp); },
-  withdraw: async id => { if (!confirm('Withdraw your leading bid? The reservation is released and the recruit returns to no-leader.')) return; try { const out = await api(`/bids/${id}/withdraw`, { method: 'POST', body: {} }); S.me.points = out.points; upsert(out.recruit); closeModal(); toast('Bid withdrawn', '', 'info'); refreshRecruit(out.recruit.id); } catch (e) { toast('Cannot withdraw', e.message, 'err'); } },
+  withdraw: async id => { if (!await ask('Withdraw your leading bid? The reservation is released and the recruit returns to no-leader.')) return; try { const out = await api(`/bids/${id}/withdraw`, { method: 'POST', body: {} }); S.me.points = out.points; upsert(out.recruit); closeModal(); toast('Bid withdrawn', '', 'info'); refreshRecruit(out.recruit.id); } catch (e) { toast('Cannot withdraw', e.message, 'err'); } },
   watch: async id => { const out = await api(`/teams/me/watchlist/${id}`, { method: 'POST', body: {} }); out.watchlisted ? S.watch.add(+id) : S.watch.delete(+id); openPlayer(+id); refreshRecruit(+id); },
   rankpos: v => { S.rankPos = v; draw(); },
   useformula: v => { if (v === 'mine' && !S.formula) { formulaBuilder(); return; } S.useMyFormula = v === 'mine'; draw(); },
@@ -830,7 +855,7 @@ const ACTIONS = {
   fminpot: (_, el) => { S.formulaDraft.minPotential = intIn(el.value, 0, 100, 0); refreshFormulaPreview(); },
   fpos: p => { const f = S.formulaDraft; f.positions = f.positions || []; f.positions = f.positions.includes(p) ? f.positions.filter(x => x !== p) : [...f.positions, p]; formulaBuilder(); },
   fsave: async () => { const f = S.formulaDraft; f.name = ($('#rc-f-name')?.value || 'My formula').slice(0, 40); try { const out = await api('/teams/me/ranking-formula', { method: 'PUT', body: { formula: f } }); S.formula = out.formula; S.useMyFormula = true; S.formulaDraft = null; closeModal(); toast('✓ Formula saved', `${S.formula.name} is now your ranking view.`, 'ok'); nav('rankings'); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } },
-  fdelete: async () => { if (!confirm('Delete your custom formula and return to the league ranking?')) return; await api('/teams/me/ranking-formula', { method: 'PUT', body: { formula: null } }); S.formula = null; S.useMyFormula = false; S.formulaDraft = null; closeModal(); draw(); },
+  fdelete: async () => { if (!await ask('Delete your custom formula and return to the league ranking?')) return; await api('/teams/me/ranking-formula', { method: 'PUT', body: { formula: null } }); S.formula = null; S.useMyFormula = false; S.formulaDraft = null; closeModal(); draw(); },
   chart: m => { S.chartMode = m; $$('.rc-charttabs .rc-chip').forEach(b => b.classList.toggle('on', b.dataset.rc === `chart:${m}`)); mountRosterCharts(); },
   insight: async (_, el) => { el.disabled = true; el.textContent = 'Analyzing…'; try { S.insight = await api('/teams/me/insights', { method: 'POST', body: { groups: S.rosterGroups } }); draw(); } catch (e) { el.disabled = false; el.textContent = 'Generate insight'; toast('Insight unavailable', e.message, 'err'); } },
   actclear: async () => { const out = await api('/admin/act-as/clear', { method: 'POST', body: {} }); S.token = out.token; localStorage.setItem(TOKEN_KEY, out.token); await loadState(); connectSSE(); draw(); },
@@ -844,7 +869,7 @@ const ACTIONS = {
   suspend: () => modal(`<div class="rc-mhead"><div><h3>Suspend all bidding</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><p>Emergency freeze: new bids are rejected immediately and settlement is held until lifted. Unlike Pause, clocks keep running — use Pause to preserve recruiting time.</p><div class="rc-form"><div class="full"><label>Reason</label><select id="rc-reason"><option>server issue</option><option>incorrect recruit data</option><option>scoring error</option><option>league decision</option><option>emergency maintenance</option></select></div></div><div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="dosuspend">Suspend bidding</button></div></div>`, 'sm'),
   dosuspend: async () => { try { await api('/admin/suspend', { method: 'POST', body: { suspended: true, reason: $('#rc-reason').value } }); closeModal(); } catch (e) { toast('Error', e.message, 'err'); } },
   unsuspend: async () => { await api('/admin/suspend', { method: 'POST', body: { suspended: false } }); toast('✓ Bidding resumed', '', 'ok'); },
-  closeround: async id => { if (!confirm('Force-close this round now? Every open recruit settles immediately to its current leader.')) return; try { await api(`/admin/rounds/${id}/close`, { method: 'POST', body: {} }); toast('Round closed', 'Settlement is running.', 'info'); setTimeout(async () => { await loadState(); draw(); }, 1500); } catch (e) { toast('Error', e.message, 'err'); } },
+  closeround: async id => { if (!await ask('Force-close this round now? Every open recruit settles immediately to its current leader.')) return; try { await api(`/admin/rounds/${id}/close`, { method: 'POST', body: {} }); toast('Round closed', 'Settlement is running.', 'info'); setTimeout(async () => { await loadState(); draw(); }, 1500); } catch (e) { toast('Error', e.message, 'err'); } },
   editround: id => {
     const r = id === 'new' ? { name: '', number: (S.adminData.rounds.length || 0) + 1, type: 'STAR', startMode: 'auto', startAfterHours: null, closeMode: 'all-resolved', closeAfterHours: null, windowHours: null, rolling: null, unbidToPool: false, status: 'DRAFT' } : S.adminData.rounds.find(x => x.id === +id);
     const started = !['DRAFT', 'SCHEDULED'].includes(r.status);
@@ -868,7 +893,7 @@ const ACTIONS = {
     const body = { name: $('#rc-r-name').value, number: +$('#rc-r-number').value, type: $('#rc-r-type').value, startMode: $('#rc-r-startmode').value, startAfterHours: trig === 'hours' ? +$('#rc-r-startafter').value : null, closeMode: $('#rc-r-closemode').value, closeAfterHours: $('#rc-r-closemode').value === 'after-hours' ? +$('#rc-r-closeafter').value : null, windowHours: $('#rc-r-hours').value === '' ? null : +$('#rc-r-hours').value, rolling: $('#rc-r-rolling').value === '' ? null : $('#rc-r-rolling').value === '1', unbidToPool: $('#rc-r-pool').value === '1' };
     try { if (id === 'new') await api('/admin/rounds', { method: 'POST', body }); else await api(`/admin/rounds/${id}`, { method: 'PATCH', body }); closeModal(); toast('✓ Round saved', body.name, 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err', 6000); }
   },
-  delround: async id => { if (!confirm('Delete this round? Only empty, unstarted rounds can be deleted.')) return; try { await api(`/admin/rounds/${id}`, { method: 'DELETE', body: {} }); closeModal(); toast('Round deleted', '', 'info'); await loadState(); draw(); } catch (e) { toast('Cannot delete', e.message, 'err'); } },
+  delround: async id => { if (!await ask('Delete this round? Only empty, unstarted rounds can be deleted.')) return; try { await api(`/admin/rounds/${id}`, { method: 'DELETE', body: {} }); closeModal(); toast('Round deleted', '', 'info'); await loadState(); draw(); } catch (e) { toast('Cannot delete', e.message, 'err'); } },
   allocall: () => modal(`<div class="rc-mhead"><div><h3>Set every team's allocation</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><div class="rc-form"><div><label>Points per team</label><input id="rc-alloc-all" type="number" min="0" value="${S.state.season.defaultAllocation}"></div><div class="full"><label>Reason (audited)</label><input id="rc-alloc-reason" placeholder="Season allocation"></div></div><p class="rc-note">Sets the season default and applies it to all ${S.adminData.teams.length} franchises as ledger transactions (spent/reserved points are untouched). Use the ± Points / Set exact buttons on a team row to override one team.</p><div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="doallocall">Apply to all teams</button></div></div>`, 'sm'),
   doallocall: async () => { try { await api('/admin/allocations/all', { method: 'POST', body: { allocated: +$('#rc-alloc-all').value, reason: $('#rc-alloc-reason').value } }); closeModal(); toast('✓ Allocations applied', 'Every franchise updated.', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } },
   setalloc: slug => modal(`<div class="rc-mhead"><div><h3>Set exact allocation · ${esc(T(slug).name)}</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><div class="rc-form"><div><label>Allocated points</label><input id="rc-alloc-one" type="number" min="0" value="${S.adminData.teams.find(t => t.slug === slug)?.points?.allocated ?? S.state.season.defaultAllocation}"></div><div class="full"><label>Reason (audited)</label><input id="rc-alloc-reason" placeholder="Expansion team bonus"></div></div><div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="dosetalloc:${slug}">Save</button></div></div>`, 'sm'),
@@ -885,7 +910,7 @@ const ACTIONS = {
         <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="demostart">Start demo</button></div>`}</div>`, 'sm');
   },
   demostart: async (_, el) => { el.disabled = true; try { const min = intIn($('#rc-demo-min').value, 1, 1440, 6); await api('/admin/demo/start', { method: 'POST', body: { windowHours: min / 60, allocation: intIn($('#rc-demo-alloc').value, 0, 1e6, 500), copyRecruits: $('#rc-demo-copy').value === '1', startRound: $('#rc-demo-start').value === '1' } }); closeModal(); toast('🧪 Demo started', 'Entering the sandbox now.', 'ok'); await setDemo(true, { quiet: true }); } catch (e) { el.disabled = false; toast('Demo not started', e.message, 'err', 6000); } },
-  demostop: async () => { if (!confirm('Stop the demo and delete all demo bids, points and signings? Live recruiting is unaffected.')) return; try { if (S.demo) await setDemo(false, { quiet: true }); await api('/admin/demo/stop', { method: 'POST', body: {} }); closeModal(); toast('Demo stopped', 'Sandbox data deleted.', 'info'); await loadState(); draw(); } catch (e) { toast('Error', e.message, 'err'); } },
+  demostop: async () => { if (!await ask('Stop the demo and delete all demo bids, points and signings? Live recruiting is unaffected.')) return; try { if (S.demo) await setDemo(false, { quiet: true }); await api('/admin/demo/stop', { method: 'POST', body: {} }); closeModal(); toast('Demo stopped', 'Sandbox data deleted.', 'info'); await loadState(); draw(); } catch (e) { toast('Error', e.message, 'err'); } },
   heal: async () => { try { const out = await api('/admin/heal', { method: 'POST', body: {} }); toast(out.fixes.length ? `Self-heal repaired ${out.fixes.length} cached value(s)` : '✓ All caches consistent', out.reconcile.ok ? 'Ledger reconciliation clean.' : `${out.reconcile.issues.length} ledger issue(s) remain — see health.`, out.reconcile.ok ? 'ok' : 'err', 7000); } catch (e) { toast('Heal failed', e.message, 'err'); } },
   backup: async () => { try { const out = await api('/admin/backup', { method: 'POST', body: {} }); toast('✓ Backup written', out.file.split(/[\\/]/).pop(), 'ok'); } catch (e) { toast('Backup failed', e.message, 'err'); } },
   settingsadmin: () => {},
@@ -906,8 +931,8 @@ const ACTIONS = {
   removerecruit: async id => { const reason = prompt('Reason for removal (recorded in the audit log):'); if (!reason) return; try { await api(`/admin/recruits/${id}`, { method: 'DELETE', body: { reason } }); closeModal(); toast('Recruit removed', reason, 'info'); await loadState(); draw(); } catch (e) { toast('Error', e.message, 'err'); } },
   editrecruit: id => ACTIONS.addrecruit(id),
   provision: async () => { const A = S.adminData; const pending = A.teams.filter(t => !t.provisioned).length; modal(`<div class="rc-mhead"><div><h3>Team logins</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><p>${pending ? `<b>${pending}</b> franchise${pending > 1 ? 's have' : ' has'} no recruiting password yet.` : 'Every franchise has been issued a password.'} Issuing generates <code>PCFL${S.state.season?.year}XXXX</code> temporary passwords (shown in the franchise table until first sign-in, then only the hash is kept).</p><div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Close</button>${pending ? '<button class="rc-btn primary" data-rc="doprovision:new">Issue missing passwords</button>' : ''}<button class="rc-btn" data-rc="doprovision:reset">Reset ALL passwords</button></div></div>`, 'sm'); },
-  doprovision: async mode => { if (mode === 'reset' && !confirm('Reset every franchise password and sign everyone out?')) return; const out = await api('/admin/teams/provision', { method: 'POST', body: { reset: mode === 'reset' } }); closeModal(); toast('✓ Passwords issued', `${out.issued.length} franchise logins updated.`, 'ok'); draw(); },
-  resetpw: async slug => { if (!confirm(`Reset the recruiting password for ${T(slug).name}?`)) return; const out = await api(`/admin/teams/${slug}/password/reset`, { method: 'POST', body: {} }); toast('✓ Password reset', `${out.loginId}: ${out.tempPassword}`, 'ok', 12000); draw(); },
+  doprovision: async mode => { if (mode === 'reset' && !await ask('Reset every franchise password and sign everyone out?')) return; const out = await api('/admin/teams/provision', { method: 'POST', body: { reset: mode === 'reset' } }); closeModal(); toast('✓ Passwords issued', `${out.issued.length} franchise logins updated.`, 'ok'); draw(); },
+  resetpw: async slug => { if (!await ask(`Reset the recruiting password for ${T(slug).name}?`)) return; const out = await api(`/admin/teams/${slug}/password/reset`, { method: 'POST', body: {} }); toast('✓ Password reset', `${out.loginId}: ${out.tempPassword}`, 'ok', 12000); draw(); },
   unlock: async slug => { await api(`/admin/teams/${slug}/unlock`, { method: 'POST', body: {} }); toast('✓ Unlocked', T(slug).name, 'ok'); draw(); },
   lock: async slug => { await api(`/admin/teams/${slug}/lock`, { method: 'POST', body: {} }); toast('Locked', T(slug).name, 'info'); draw(); },
   openteam: async arg => { const [slug, cur] = arg.split('|'); await api(`/admin/teams/${slug}`, { method: 'PATCH', body: { franchiseStatus: cur === 'OPEN' ? 'ACTIVE' : 'OPEN' } }); draw(); },
@@ -940,5 +965,5 @@ window.addEventListener('error', e => { if (location.hash.startsWith('#/recruiti
 function bindLogin() { $$('[data-rc-enter]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') ACTIONS[i.dataset.rcEnter](); })); $('#rc-login-pw')?.focus(); }
 // [email] forgot/reset password + commissioner email tools (js/recruiting-email.js); a load failure never affects the rest of the module
 const EMAIL = import('./recruiting-email.js?v=__BUILD__')
-  .then(m => { m.installEmail({ S, api, esc, $, $$, modal, closeModal, toast, T, logo, nav, draw, loadState, connectSSE, fmtDate, TOKEN_KEY, ACTIONS, isCommish, CFG }); return m; })
+  .then(m => { m.installEmail({ S, api, esc, $, $$, modal, closeModal, ask, toast, T, logo, nav, draw, loadState, connectSSE, fmtDate, TOKEN_KEY, ACTIONS, isCommish, CFG }); return m; })
   .catch(e => { reportClientError(e, 'email-module'); return null; });
