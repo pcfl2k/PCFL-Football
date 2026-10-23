@@ -23,6 +23,7 @@ const S = {            // module state (survives route re-renders while on #/rec
   es: null, view: 'board', filters: null, sort: { key: 'rank', dir: 'asc' }, viewMode: localStorage.getItem('pcfl-rc-view') || 'cards',
   selected: new Set(), watch: new Set(), ledger: null, notifs: [], clock: null, savedFilters: [], adminData: null, filtersCollapsed: true,
   demo: localStorage.getItem('pcfl-rc-demo') === '1', demoInfo: null,
+  myMax: new Map(),     // recruitId → my hidden max bid while I lead (never shown to anyone else)
 };
 /** Switch between the live recruiting and the commissioner's demo sandbox (separate database on the service). */
 async function setDemo(on, { quiet } = {}) {
@@ -206,6 +207,7 @@ function connectSSE() {
   es.onerror = () => { setLive(false); wasDown = true; };
   on('BID_PLACED', d => { upsert(d.recruit); pushFeed({ ...d.bid, type: 'BID_PLACED', name: d.recruit.name, position: d.recruit.position }); if (d.bid.team === myTeam()) return; if (S.view === 'board') refreshRecruit(d.recruit.id); });
   on('BID_OUTBID', d => { upsert(d.recruit); if (d.team === myTeam()) { S.me.points = d.points; toast('You have been outbid', `${T(d.by).name} bid ${d.amount} on ${d.recruit.position} ${d.recruit.name}.`, 'err', 6000); S.me.unread = (S.me.unread || 0) + 1; drawHero(); refreshRecruit(d.recruit.id); } });
+  on('MAX_BID_HELD', d => { upsert(d.recruit); if (d.team === myTeam()) { toast('Your max bid held', `${T(d.by).name} challenged on ${d.recruit.position} ${d.recruit.name}. Your bid rose automatically to ${d.amount} and you still lead.`, 'info', 7000); refreshRecruit(d.recruit.id); } });
   on('BALANCE_CHANGED', d => { if (d.team === myTeam() && S.me) { S.me.points = d.points; drawHero(); if (S.view === 'ledger') draw(); } });
   on('BID_WITHDRAWN', d => { upsert(d.recruit); refreshRecruit(d.recruit.id); });
   on('PLAYER_SIGNED', d => { upsert(d.recruit); pushFeed({ type: 'BID_WON', team: d.team, amount: d.amount, at: d.at, recruitId: d.recruit.id, name: d.recruit.name, position: d.recruit.position }); celebrate(d); refreshRecruit(d.recruit.id); if (S.view !== 'board') draw(); });
@@ -220,7 +222,7 @@ function connectSSE() {
   on('RECRUIT_UPDATED', d => { upsert(d.recruit); refreshRecruit(d.recruit.id); });
   on('RECRUIT_REMOVED', d => { S.recruits.delete(d.recruitId); if (S.view === 'board') draw(); });
   on('RECRUITS_IMPORTED', async () => { await loadState(); draw(); });
-  on('SYSTEM_NOTICE', d => toast('League notice', d.message, d.level === 'critical' ? 'err' : 'info'));
+  on('SYSTEM_NOTICE', async d => { toast('League notice', d.message, d.level === 'critical' ? 'err' : 'info'); if (/restarted from the beginning/.test(d.message || '')) { S.recruits = new Map(); S.feed = []; S.myBids = null; S.myMax.clear(); S.selected.clear(); await loadState(); draw(); } });
   on('DEMO_STARTED', async d => { S.demoInfo = d.demo; if (!S.demo) { drawHero(); toast('Demo available', 'The commissioner opened a practice sandbox — use "Try the demo" in the menu.', 'info', 7000); } });
   on('DEMO_STOPPED', async () => { if (S.demo) await setDemo(false); else { await loadState(); drawHero(); } });
 }
@@ -425,18 +427,32 @@ function boardHTML() {
     <aside class="rc-side rc-feedcol"><div class="card"><div class="rc-livehd"><span class="dot ${S.es && S.es.readyState === 1 ? '' : 'off'}"></span> Live recruiting</div><div class="rc-feed" id="rc-feed">${feedHTML()}</div></div></aside>
   </div>`;
 }
-/** Minimum bid for *me* on this recruit: leaders raise by 1; challengers pay the bid-war escalator (server-computed minBid). */
-function minBidFor(r) { return r.leader && r.leader === myTeam() ? r.currentBid + 1 : (r.minBid ?? (r.currentBid || 0) + 1); }
-/** Explains the escalator on the bid form once a player is in (or about to enter) a bid war. */
+/* Bids move in half points. Taking the lead needs +0.5 for lead changes 1-4, then the raise doubles
+   (1, 2, 4 …) up to a cap by star rating (5★ 4, 4★ 3, 3/2/1★ 1). The first three teams to bid on a
+   player always need only +0.5. Mirrors lib/engine.mjs on the service, which enforces it. */
+const STEP = 0.5;
+const isHalf = v => typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v * 2);
+const raiseCapFor = st => (st >= 5 ? 4 : st === 4 ? 3 : 1);
+const escRaise = (st, lc) => { const n = (lc || 0) + 1; return n <= 4 ? STEP : Math.min(STEP * 2 ** (n - 4), raiseCapFor(st)); };
+/** Am I (or would I become) one of the first three teams to bid on this player? */
+const iAmExempt = r => { const ex = r.escalationExempt || []; return ex.length < 3 || ex.includes(myTeam()); };
+/** Raise *I* need to take the lead on this player. */
+function myRaise(r) { if (!r.leader) return 0; if (!S.state.season?.escalationOn || iAmExempt(r)) return STEP; return r.minRaise ?? STEP; }
+/** Minimum bid for *me*: the opening minimum, or the current bid + my raise. (A leader raises its max instead.) */
+function minBidFor(r) { return r.leader ? (r.currentBid || 0) + myRaise(r) : (r.minBid ?? 1); }
+/** My current max on a player I lead (falls back to the visible bid). */
+const myMaxFor = r => S.myMax.get(r.id) ?? r.currentBid;
+/** Explains the bid-war escalator on the bid form. */
 function escalationNote(r) {
   const s = S.state.season; if (!s?.escalationOn || !r.leader) return '';
-  const n = r.leadChanges || 0, after = s.escalationAfter || 3, every = s.escalationEvery || 2, base = s.escalationBase || 3;
-  const stepFor = k => { if (k < after) return 1; let v = base * 2 ** Math.floor((k - after) / every); if (s.escalationCap > 0) v = Math.min(v, s.escalationCap); return v; };
-  if (n + 2 < after) return '';
-  const next = stepFor(n + 2);
-  const mine = r.leader === myTeam();
-  return `<div class="rc-note rc-escnote">${mine ? `You lead. If another franchise takes over, they must raise by at least <b>+${stepFor(n + 1)}</b>${next !== stepFor(n + 1) ? ` and you would need <b>+${next}</b> to take it back` : ''}` : `🔥 Bid-war protection: the lead has changed <b>${n}</b> time${n === 1 ? '' : 's'}. Taking it now needs at least <b>+${r.minRaise}</b>; the next takeover will need <b>+${next}</b>`}. Every takeover still resets the ${fmtHours(currentRound()?.windowHours || s.windowHours)} clock.</div>`;
+  const n = r.leadChanges || 0, ex = r.escalationExempt || [], cur = escRaise(r.stars, n), next = escRaise(r.stars, n + 1), cap = r.raiseCap ?? raiseCapFor(r.stars);
+  const clock = `Every takeover resets the ${fmtHours(currentRound()?.windowHours || s.windowHours)} clock.`;
+  if (r.leader === myTeam()) return `<div class="rc-note rc-escnote">You lead. ${ex.length >= 3 && cur > STEP ? `A new bidder needs at least <b>+${cur}</b> to take over; ${ex.filter(t => t !== myTeam()).map(t => esc(T(t).abbr)).join(' and ')} only need +0.5 (first three bidders).` : 'Other teams need +0.5 to take over for now.'} ${clock}</div>`;
+  if (iAmExempt(r)) return `<div class="rc-note rc-escnote">You're one of the first three teams to bid on this player, so you only ever need <b>+0.5</b> to take the lead. ${clock}</div>`;
+  if (cur > STEP) return `<div class="rc-note rc-escnote">🔥 Bid war: the lead has changed <b>${n}</b> time${n === 1 ? '' : 's'}, so taking it now needs at least <b>+${cur}</b>${next > cur ? `; the next takeover needs <b>+${next}</b>` : ''}. ${clock}</div>`;
+  return `<div class="rc-note rc-escnote">Taking the lead needs <b>+0.5</b> for now. After 4 lead changes the raise doubles each time, up to <b>+${cap}</b> for a ${r.stars}★ player. ${clock}</div>`;
 }
+
 function statusTag(r) {
   const me = myTeam();
   if (r.status === 'SIGNED') return `<span class="rc-tag signed">Signed</span>`;
@@ -469,8 +485,8 @@ function cardHTML(r) {
       <div><div class="name">${esc(r.name)}</div><div class="meta"><span>Rank <b>#${r.rank}</b></span><span>${r.position} <b>#${r.posRank}</b></span><span>OVR <b>${Math.round(r.overallActual)}</b> / <b>${Math.round(r.overallPotential)}</b></span>${S.watch.has(r.id) ? '<span style="color:var(--gold)">★ target</span>' : ''}</div></div></div>
     ${attrsHTML(r)}
     ${r.status === 'SIGNED' ? `<div class="rc-signed-strip"><img src="${logo(r.signedTeam)}" alt=""><span>Signed · <b>${esc(T(r.signedTeam).name)}</b></span><span class="pts">${r.signedAmount} pts</span></div>`
-    : `<div class="bidrow"><div class="cur">${r.currentBid ? `<img src="${logo(r.leader)}" alt=""><div><b>${r.currentBid}</b><small>${esc(T(r.leader).abbr)} leads${r.minRaise > 1 ? ` · <span class="rc-war" title="Bid war: the lead has changed ${r.leadChanges} times — taking it now needs at least +${r.minRaise} points">🔥 ×${r.leadChanges} · min +${r.minRaise}</span>` : ''}</small></div>` : `<div><b class="nobid">—</b><small>No bids · min 1</small></div>`}</div>
-        ${me && biddable ? `<button class="rc-btn ${r.leader === me ? 'dark' : 'primary'} sm" data-rc="bid:${r.id}">${r.leader === me ? 'Raise' : r.status === 'POOL' ? 'Sign from pool' : 'Place bid'}</button>` : `<button class="rc-btn sm" data-rc="open:${r.id}">Details</button>`}
+    : `<div class="bidrow"><div class="cur">${r.currentBid ? `<img src="${logo(r.leader)}" alt=""><div><b>${r.currentBid}</b><small>${esc(T(r.leader).abbr)} leads${(me && r.leader !== me ? myRaise(r) : r.minRaise) > STEP ? ` · <span class="rc-war" title="Bid war: the lead has changed ${r.leadChanges} times — taking it now needs at least +${me && r.leader !== me ? myRaise(r) : r.minRaise} points (the first three bidders only need +0.5)">🔥 ×${r.leadChanges} · min +${me && r.leader !== me ? myRaise(r) : r.minRaise}</span>` : ''}</small></div>` : `<div><b class="nobid">—</b><small>No bids · min 1</small></div>`}</div>
+        ${me && biddable ? `<button class="rc-btn ${r.leader === me ? 'dark' : 'primary'} sm" data-rc="bid:${r.id}">${r.leader === me ? 'Raise max' : r.status === 'POOL' ? 'Sign from pool' : 'Place bid'}</button>` : `<button class="rc-btn sm" data-rc="open:${r.id}">Details</button>`}
         <div class="tl"><span>${statusTag(r)}</span>${r.status === 'OPEN' ? `<span class="t" data-closes="${r.closesAt}" data-rid="${r.id}">${countdown(r.closesAt).text}</span>` : ''}</div></div>`}
   </article>`;
 }
@@ -483,7 +499,7 @@ function rowHTML(r) {
 }
 function feedHTML() {
   if (!S.feed.length) return `<div class="rc-empty">No bids yet. The board is quiet…</div>`;
-  return S.feed.map(e => `<div class="it ${e.type === 'BID_WON' ? 'won' : ''}"><img src="${logo(e.team)}" alt=""><div><div class="who">${esc(T(e.team).name)}</div><div class="what">${e.type === 'BID_WON' ? 'signed' : e.type === 'BID_WITHDRAWN' ? 'withdrew on' : 'bid on'} ${e.position} <a href="#" data-rc="open:${e.recruitId}" style="font-weight:600">${esc(e.name)}</a></div></div><div class="amt">${e.amount ?? ''}</div><div class="ts">${fmtTs(e.at)}</div></div>`).join('');
+  return S.feed.map(e => `<div class="it ${e.type === 'BID_WON' ? 'won' : ''}"><img src="${logo(e.team)}" alt=""><div><div class="who">${esc(T(e.team).name)}</div><div class="what">${e.type === 'BID_WON' ? 'signed' : e.type === 'BID_WITHDRAWN' ? 'withdrew on' : e.type === 'BID_AUTO' ? 'max bid auto-raised on' : 'bid on'} ${e.position} <a href="#" data-rc="open:${e.recruitId}" style="font-weight:600">${esc(e.name)}</a></div></div><div class="amt">${e.amount ?? ''}</div><div class="ts">${fmtTs(e.at)}</div></div>`).join('');
 }
 function bindBoard() {
   const tgl = $('.rc-filters-toggle'); if (tgl && window.innerWidth <= 860) tgl.style.display = 'inline-flex';
@@ -493,7 +509,7 @@ function massHTML() {
   if (!myTeam() || !S.selected.size || S.view !== 'board') return '';
   const per = S.massPer || 1; const n = S.selected.size;
   return `<div class="rc-mass"><div class="n">${n}<small>players selected</small></div>
-    <div class="rc-inline"><span style="font-size:12px;color:rgba(255,255,255,.7)">Bid per player</span><div class="rc-stepper"><button data-rc="massstep:-1">−</button><input type="number" min="1" value="${per}" data-rci="massper"><button data-rc="massstep:1">+</button></div>
+    <div class="rc-inline"><span style="font-size:12px;color:rgba(255,255,255,.7)">Bid per player</span><div class="rc-stepper"><button data-rc="massstep:-0.5">−</button><input type="number" min="1" step="0.5" value="${per}" data-rci="massper"><button data-rc="massstep:0.5">+</button></div>
     <div class="presets">${[1, 2, 5, 10].map(v => `<button data-rc="masspreset:${v}">${v} PT</button>`).join('')}</div></div>
     <div class="exposure">Max exposure <b>${n * per}</b> · Available <b>${S.me.points?.available ?? '—'}</b></div><span class="grow"></span>
     <button class="rc-btn ghost sm" style="color:#fff;border-color:rgba(255,255,255,.25)" data-rc="clearsel">Clear</button><button class="rc-btn gold" data-rc="massbid">Bid selected players</button></div>`;
@@ -505,33 +521,58 @@ async function openPlayer(id) {
   const d = await api(`/recruits/${id}`); upsert(d.recruit); const r = d.recruit; const me = myTeam();
   const portalOpen = S.state.rounds.some(x => x.type === 'PORTAL' && x.status === 'ACTIVE');
   const canBid = me && (r.status === 'OPEN' || (r.status === 'POOL' && portalOpen)) && !S.state.season?.suspended;
-  const hist = d.events.filter(e => ['BID_PLACED', 'BID_WON', 'BID_WITHDRAWN', 'BID_RAISED'].includes(e.type) || e.type === 'BID_PLACED');
+  if (d.myBid && d.myBid.status === 'ACTIVE' && r.leader === me) S.myMax.set(r.id, d.myBid.maxAmount); else S.myMax.delete(r.id);
+  const HIST_LABEL = { BID_OUTBID: 'outbid', BID_WON: 'SIGNED', BID_WITHDRAWN: 'withdrawn', BID_AUTO: 'auto (max bid)', BID_BEATEN_BY_MAX: 'beaten by max', MAX_RAISED: 'raised max (only you see this)' };
+  const hist = d.events.filter(e => e.type !== 'BID_RAISED');
   const html = `<div class="rc-mhead"><div class="rc-avatar">${r.headshotUrl ? `<img src="${esc(r.headshotUrl)}" alt="">` : initials(r)}</div><div><h3>${esc(r.name)}</h3><div class="m"><span class="rc-stars-row s${r.stars}">${stars(r.stars)}</span><span>${r.position}</span><span>Overall #${r.rank}</span><span>${r.position} #${r.posRank}</span><span>${esc(S.state.rounds.find(x => x.id === r.roundId)?.name || '')}</span></div></div>
       ${me ? `<button class="rc-btn sm ${S.watch.has(r.id) ? 'gold' : 'ghost'}" style="margin-left:auto;${S.watch.has(r.id) ? '' : 'color:#fff;border-color:rgba(255,255,255,.3)'}" data-rc="watch:${r.id}">${S.watch.has(r.id) ? '★ Target' : '☆ Target'}</button>` : ''}<button class="x" data-rc="close" aria-label="Close">×</button></div>
     <div class="rc-mbody"><div class="rc-mgrid"><div><h4>Ratings</h4>${attrsHTML(r, true)}<div class="rc-note" style="margin-top:8px">Overall ${r.overallActual} actual · ${r.overallPotential} potential · Recruit score ${r.score}</div>
-        <h4>Bid history</h4>${hist.length ? `<table class="rc-hist">${d.events.filter(e => e.type !== 'BID_RAISED').map(e => `<tr class="${e.type === 'BID_OUTBID' ? 'out' : e.type === 'BID_WON' ? 'won' : ''}"><td>${fmtTs(e.at)}</td><td><img src="${logo(e.team)}" alt="">${esc(T(e.team).abbr)}</td><td>${e.type === 'BID_OUTBID' ? 'outbid' : e.type === 'BID_WON' ? 'SIGNED' : e.type === 'BID_WITHDRAWN' ? 'withdrawn' : 'bid'}</td><td>${e.amount ?? ''}</td></tr>`).join('')}</table>` : '<div class="rc-empty">No bids yet.</div>'}</div>
+        <h4>Bid history</h4>${hist.length ? `<table class="rc-hist">${hist.map(e => `<tr class="${['BID_OUTBID', 'BID_BEATEN_BY_MAX'].includes(e.type) ? 'out' : e.type === 'BID_WON' ? 'won' : ''}"><td>${fmtTs(e.at)}</td><td><img src="${logo(e.team)}" alt="">${esc(T(e.team).abbr)}</td><td>${HIST_LABEL[e.type] || 'bid'}</td><td>${e.amount ?? ''}</td></tr>`).join('')}</table>` : '<div class="rc-empty">No bids yet.</div>'}</div>
       <div><h4>Current recruitment</h4><div class="rc-curbid">${r.status === 'SIGNED' ? `<img src="${logo(r.signedTeam)}" alt=""><div><b>${r.signedAmount}</b><small>Signed · ${esc(T(r.signedTeam).name)} · ${fmtDate(r.signedAt)}</small></div>` : r.currentBid ? `<img src="${logo(r.leader)}" alt=""><div><b>${r.currentBid}</b><small>${esc(T(r.leader).name)} leads${r.leader === me ? ' (you)' : ''}</small></div>` : `<div><b>—</b><small>No bids · minimum 1</small></div>`}</div>
         ${r.status === 'OPEN' ? `<div class="rc-note" style="margin-top:8px">Signs in <b data-closes="${r.closesAt}" data-rid="${r.id}">${countdown(r.closesAt).text}</b> · ${fmtDate(r.closesAt)}${S.state.season?.rollingBids ? ' · every new lead restarts the clock' : ''}</div>` : r.status === 'POOL' ? `<div class="rc-note" style="margin-top:8px">Portal Pool — not bid on in its round. ${portalOpen ? `The first bid opens a ${S.state.season?.poolBidHours || 24}h signing clock.` : 'Becomes available when the Portal period opens.'}</div>` : `<div class="rc-note" style="margin-top:8px">Status: ${r.status}</div>`}
-        ${canBid ? `<h4>Your bid</h4><div class="rc-bidform"><div><div class="rc-field"><input id="rc-bid-amt" type="number" min="${minBidFor(r)}" value="${minBidFor(r)}" data-rc-enter="reviewbid"></div><div class="min">Minimum valid bid: <b>${minBidFor(r)}</b> · Available: <b>${S.me.points?.available ?? 0}</b>${r.leader === me ? ` · You lead at ${r.currentBid}; only the increase is reserved` : ''}</div>${escalationNote(r)}</div><button class="rc-btn primary" data-rc="reviewbid:${r.id}">Review bid</button></div>
+        ${canBid ? bidFormHTML(r) + `
           ${r.leader === me && S.state.season?.allowWithdrawal && d.myBid ? `<div style="margin-top:10px"><button class="rc-btn sm ghost" data-rc="withdraw:${d.myBid.id}">Withdraw bid</button></div>` : ''}` : (!me && r.status === 'OPEN' ? `<div style="margin-top:14px"><button class="rc-btn gold" data-rc="login">Sign in to bid</button></div>` : '')}
       </div></div></div>`;
   modal(html, 'lg');
   $$('[data-rc-enter]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') ACTIONS.reviewbid(String(r.id)); }));
 }
-function reviewBid(id, amount) {
-  const r = S.recruits.get(+id); const me = myTeam();
-  const additional = r.leader === me ? amount - r.currentBid : amount;
-  modal(`<div class="rc-mhead"><div><h3>Confirm bid</h3><div class="m"><span>${r.position} ${esc(r.name)}</span></div></div><button class="x" data-rc="close">×</button></div>
-    <div class="rc-mbody"><div class="rc-confirm"><div class="big">${amount}</div><p>You are about to bid <b>${amount} recruiting points</b> on <b>${r.position} ${esc(r.name)}</b>.<br>If you become the leader, <b>${additional}</b> point${additional === 1 ? '' : 's'} will be reserved from your available balance (currently ${S.me.points?.available}).${isCommish() ? '<br><b style="color:var(--rc-amber)">Commissioner override — bidding as ' + esc(T(me).name) + '.</b>' : ''}</p></div>
-    <div class="rc-mactions"><button class="rc-btn ghost" data-rc="open:${r.id}">Cancel</button><button class="rc-btn primary" id="rc-confirm" data-rc="confirmbid:${r.id}|${amount}|${r.currentBid}">Confirm ${amount} point bid</button></div></div>`, 'sm');
+/** Bid form: a challenger enters a bid and an optional hidden max; the leader can only raise its max. */
+function bidFormHTML(r) {
+  const me = myTeam(), avail = S.me.points?.available ?? 0;
+  if (r.leader && r.leader === me) {
+    const mx = myMaxFor(r), next = mx + STEP;
+    return `<h4>Your max bid</h4><div class="rc-bidform"><div><div class="rc-bidpair"><div class="rc-field"><label for="rc-bid-max">Raise your max</label><input id="rc-bid-max" type="number" step="0.5" min="${next}" value="${next}" data-rc-enter="reviewbid"></div></div>
+      <div class="min">You lead at <b>${r.currentBid}</b> · your max <b>${mx}</b> (only you can see it) · Available: <b>${avail}</b></div>
+      <div class="rc-note">Raising your max holds only the difference. Your visible bid stays at ${r.currentBid} until another team challenges.</div>${escalationNote(r)}</div><button class="rc-btn primary" data-rc="reviewbid:${r.id}">Review</button></div>`;
+  }
+  const min = minBidFor(r);
+  return `<h4>Your bid</h4><div class="rc-bidform"><div><div class="rc-bidpair"><div class="rc-field"><label for="rc-bid-amt">Your bid</label><input id="rc-bid-amt" type="number" step="0.5" min="${min}" value="${min}" data-rc-enter="reviewbid"></div>
+      <div class="rc-field"><label for="rc-bid-max">Max bid <span>optional · hidden</span></label><input id="rc-bid-max" type="number" step="0.5" min="${min}" placeholder="Same as bid" data-rc-enter="reviewbid"></div></div>
+    <div class="min">Minimum bid: <b>${min}</b> · Available: <b>${avail}</b> · steps of 0.5</div>
+    <div class="rc-note">With a max, the system bids for you in the smallest steps needed to keep the lead, up to your max. Your full max is held while you lead; you pay only the final bid.</div>${escalationNote(r)}</div><button class="rc-btn primary" data-rc="reviewbid:${r.id}">Review bid</button></div>`;
 }
-async function confirmBid(id, amount, expected) {
+function reviewBid(id, amount, max) {
+  const r = S.recruits.get(+id); const me = myTeam(); const leader = r.leader === me;
+  const held = leader ? max - myMaxFor(r) : max;
+  const commish = isCommish() ? '<br><b style="color:var(--rc-amber)">Commissioner override — bidding as ' + esc(T(me).name) + '.</b>' : '';
+  const body = leader
+    ? `Raise your max bid on <b>${r.position} ${esc(r.name)}</b> to <b>${max} points</b>?<br>Your visible bid stays at ${r.currentBid}. <b>${held}</b> more point${held === 1 ? '' : 's'} will be held (available: ${S.me.points?.available}).`
+    : `You are about to bid <b>${amount} points</b> on <b>${r.position} ${esc(r.name)}</b>${max > amount ? ` with a hidden max of <b>${max}</b>. The system raises your bid only as far as needed to keep the lead, up to your max` : ''}.<br>While you lead, <b>${max}</b> point${max === 1 ? '' : 's'} are held from your available balance (currently ${S.me.points?.available}). You pay only the final bid.`;
+  modal(`<div class="rc-mhead"><div><h3>${leader ? 'Confirm new max' : 'Confirm bid'}</h3><div class="m"><span>${r.position} ${esc(r.name)}</span></div></div><button class="x" data-rc="close">×</button></div>
+    <div class="rc-mbody"><div class="rc-confirm"><div class="big">${leader ? `max ${max}` : max > amount ? `${amount} <small>max ${max}</small>` : amount}</div><p>${body}${commish}</p></div>
+    <div class="rc-mactions"><button class="rc-btn ghost" data-rc="open:${r.id}">Cancel</button><button class="rc-btn primary" id="rc-confirm" data-rc="confirmbid:${r.id}|${amount}|${max}|${r.currentBid}">${leader ? `Confirm max ${max}` : `Confirm ${amount} point bid`}</button></div></div>`, 'sm');
+}
+async function confirmBid(id, amount, max, expected) {
   const btn = $('#rc-confirm'); if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
   const reqId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
   try {
-    const out = await api('/bids', { method: 'POST', body: { recruitId: id, amount, clientRequestId: reqId, expectedCurrentBid: expected } });
+    S.lastMax = max;
+    const out = await api('/bids', { method: 'POST', body: { recruitId: id, amount, maxAmount: max, clientRequestId: reqId, expectedCurrentBid: expected } });
     S.me.points = out.points; upsert(out.recruit); S.myBids?.add(id);
-    closeModal(); H.haptic(20); toast('✓ Bid accepted', `${T(myTeam()).abbr} now leads ${out.recruit.position} ${out.recruit.name} at ${amount} points.`, 'ok');
+    const rr = out.recruit; closeModal();
+    if (out.outcome === 'beaten-by-max') { S.myMax.delete(id); toast("Another team's max bid is higher", `${T(rr.leader).abbr} still leads ${rr.position} ${rr.name}. Its max beat yours, so the bid is now ${rr.currentBid}. Bid at least ${minBidFor(rr)} to try again.`, 'err', 9000); }
+    else if (out.outcome === 'max-raised') { S.myMax.set(id, out.bid.maxAmount); H.haptic(20); toast('✓ Max bid raised', `Your max on ${rr.position} ${rr.name} is now ${out.bid.maxAmount}. Your bid stays at ${rr.currentBid}.`, 'ok'); }
+    else { S.myMax.set(id, out.bid?.maxAmount ?? max); H.haptic(20); toast('✓ Bid accepted', `${T(myTeam()).abbr} now leads ${rr.position} ${rr.name} at ${rr.currentBid} points${(out.bid?.maxAmount ?? max) > rr.currentBid ? ` · your max of ${out.bid?.maxAmount ?? max} is hidden` : ''}.`, 'ok'); }
     refreshRecruit(id); drawHero();
   } catch (e) {
     if (e.code === 'CONCURRENT_BID_CHANGE' || e.code === 'BID_TOO_LOW') {
@@ -542,7 +583,7 @@ async function confirmBid(id, amount, expected) {
   }
 }
 async function massBid() {
-  const ids = [...S.selected]; const per = Math.max(1, Math.trunc(+S.massPer || 1));
+  const ids = [...S.selected]; const per = Math.max(1, Math.round((+S.massPer || 1) * 2) / 2);
   const items = ids.map(id => ({ recruitId: id, amount: per }));
   modal(`<div class="rc-mhead"><div><h3>Confirm mass bid</h3></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody"><div class="rc-confirm"><div class="big">${ids.length} × ${per}</div><p>Submit <b>${per}-point</b> bids on <b>${ids.length} recruits</b>?<br>Maximum immediate exposure: <b>${ids.length * per}</b> points. Available: <b>${S.me.points?.available}</b>.<br>All-or-nothing: if any bid is invalid, none are placed.</p></div>
     <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" id="rc-confirm" data-rc="confirmmass">Confirm ${ids.length} bids</button></div></div>`, 'sm');
@@ -575,8 +616,8 @@ function celebrate(d) {
 /* ------------------------------------------------------------ ledger / signed / rankings */
 async function ledgerHTML() {
   if (!myTeam()) return loginHTML('Sign in to view your recruitment ledger.');
-  const L = await api('/teams/me/ledger'); S.ledger = L; S.myBids = new Set(L.bids.map(b => b.recruitId)); const p = L.points; const team = T(L.team);
-  const li = (b, cls) => `<li><img src="${logo(L.team)}" alt=""><span class="pos">${b.position}</span><span class="nm" data-rc="open:${b.recruitId}">${esc(b.name)}</span>${cls === 'out' ? `<span class="rc-tag outbid">Outbid · ${esc(T(b.leader).abbr)} at ${b.currentBid}</span>` : `<span class="rc-tag lead">Leading</span>`}<span class="amt">${cls === 'out' ? b.currentBid : b.amount}</span>${cls === 'out' && b.recruitStatus === 'OPEN' ? `<button class="rc-btn sm primary" data-rc="bid:${b.recruitId}">Re-bid</button>` : ''}</li>`;
+  const L = await api('/teams/me/ledger'); S.ledger = L; S.myBids = new Set(L.bids.map(b => b.recruitId)); S.myMax = new Map(L.leading.map(b => [b.recruitId, b.maxAmount])); const p = L.points; const team = T(L.team);
+  const li = (b, cls) => `<li><img src="${logo(L.team)}" alt=""><span class="pos">${b.position}</span><span class="nm" data-rc="open:${b.recruitId}">${esc(b.name)}</span>${cls === 'out' ? `<span class="rc-tag outbid">Outbid · ${esc(T(b.leader).abbr)} at ${b.currentBid}</span>` : `<span class="rc-tag lead">Leading${b.maxAmount > b.amount ? ` · max ${b.maxAmount}` : ''}</span>`}<span class="amt">${cls === 'out' ? b.currentBid : b.amount}</span>${cls === 'out' && b.recruitStatus === 'OPEN' ? `<button class="rc-btn sm primary" data-rc="bid:${b.recruitId}">Re-bid</button>` : ''}</li>`;
   const roster = await loadRoster(L.team); S.rosterGroups = rosterGroups(roster, L.signed);
   return `<div class="rc-summary"><div class="card"><b>${p.allocated}</b><span>Starting</span></div><div class="card"><b>${p.adjustments >= 0 ? '+' : ''}${p.adjustments}</b><span>Adjustments</span></div><div class="card"><b>${p.spent}</b><span>Spent</span></div><div class="card"><b>${p.reserved}</b><span>Reserved</span></div><div class="card avail"><b>${p.available}</b><span>Available</span></div></div>
     <div class="rc-sections">${roster.players.length ? rosterDashboardHTML(S.rosterGroups, roster) : `<div class="card wide rc-empty">Roster data for ${esc(T(L.team).name)} isn't available on the site yet.</div>`}
@@ -749,7 +790,7 @@ async function adminHTML() {
     ${A.suspended ? `<button class="rc-btn gold" data-rc="unsuspend">Lift bidding suspension</button>` : `<button class="rc-btn" data-rc="suspend">⚠ Suspend all bidding</button>`}
     <button class="rc-btn" data-rc="import">⇪ Import recruits</button><button class="rc-btn" data-rc="addrecruit">+ Add recruit</button>${S.demo ? '' : `<button class="rc-btn" data-rc="provision">🔑 Team logins</button>`}<button class="rc-btn" data-rc="audit">Audit log</button>${S.demo ? '' : `<button class="rc-btn" data-rc="league">🏈 League files</button>`}<button class="rc-btn" data-rc="health">System health</button>
     <button class="rc-btn ${S.demoInfo?.active ? 'gold' : ''}" data-rc="demo">🧪 ${S.demo ? 'Demo controls' : S.demoInfo?.active ? 'Demo running' : 'Demo mode'}</button>
-    <button class="rc-btn ghost sm" data-rc="settings">Settings</button></div>
+    <button class="rc-btn ghost sm" data-rc="settings">Settings</button>${S.demo ? '' : '<button class="rc-btn ghost sm rc-danger" data-rc="restartseason">Restart recruiting</button>'}</div>
   <div class="rc-admin-grid">
     <div class="card"><div class="rc-livehd">Rounds · ${esc(s.name)}<span style="margin-left:auto;font-size:11px;color:var(--muted)">${k.total} recruits · ${k.signed} signed · ${k.unsigned} unsigned</span><button class="rc-btn sm ghost" style="margin-left:8px" data-rc="editround:new">+ Round</button></div><ul class="rc-list rc-rounds">${A.rounds.map(r => `<li><div><b>${esc(r.name)}</b> ${r.type === 'PORTAL' ? '<span class="rc-tag pool">Portal</span>' : ''}<div class="rc-note">${roundN(r.id)} players${r.startedAt ? ` · started ${fmtDate(r.startedAt)}` : ''}${r.pauseTotalMs ? ` · paused ${Math.round(r.pauseTotalMs / 60000)}m` : ''}<br><code>${r.startMode === 'auto' ? (r.startAfterHours != null ? `auto ${r.startAfterHours}h after prev` : 'auto on prev complete') : 'manual start'}</code> <code>${r.closeMode === 'after-hours' ? `closes after ${r.closeAfterHours}h` : 'closes when all resolved'}</code> <code>${(r.rolling ?? (s.rollingBids ? 1 : 0)) ? 'rolling' : 'fixed'} ${r.windowHours || s.windowHours}h</code>${r.unbidToPool ? ' <code>unbid → pool</code>' : ''}</div></div><span class="rc-status ${r.status}">${r.status}</span><span class="acts">${['DRAFT', 'SCHEDULED'].includes(r.status) ? `<button class="rc-btn sm primary" data-rc="startround:${r.id}">Start</button>` : ''}${['ACTIVE', 'PAUSED'].includes(r.status) ? `<button class="rc-btn sm" data-rc="closeround:${r.id}">Force close</button>` : ''}<button class="rc-btn sm ghost" data-rc="editround:${r.id}">Settings</button></span></li>`).join('')}</ul></div>
     <div class="card"><div class="rc-livehd">League pulse</div><ul class="rc-list">${(A.insights?.mostContested || []).slice(0, 5).map(r => `<li><span class="pos">${r.position}</span><span class="nm" data-rc="open:${r.id}">${esc(r.name)}</span><span class="rc-tag hot">${r.bidders} teams</span><span class="amt">${r.currentBid}</span></li>`).join('') || '<li class="rc-empty">No bidding activity yet.</li>'}</ul>
@@ -837,12 +878,26 @@ const ACTIONS = {
   viewmode: v => { S.viewMode = v; localStorage.setItem('pcfl-rc-view', v); draw(); },
   select: (id, el) => { el.checked ? S.selected.add(+id) : S.selected.delete(+id); $(`[data-card="${id}"]`)?.classList.toggle('sel', el.checked); redrawMass(); },
   selectall: (_, el) => { const list = visibleRecruits().filter(r => r.status === 'OPEN'); if (el.checked) list.forEach(r => S.selected.add(r.id)); else S.selected.clear(); draw(); },
-  clearsel: () => { S.selected.clear(); draw(); }, massstep: d => { S.massPer = Math.max(1, (+S.massPer || 1) + +d); redrawMass(); }, masspreset: v => { S.massPer = +v; redrawMass(); }, massper: (_, el) => { S.massPer = Math.max(1, +el.value || 1); const ex = $('.rc-mass .exposure b'); if (ex) ex.textContent = S.selected.size * S.massPer; },
+  clearsel: () => { S.selected.clear(); draw(); }, massstep: d => { S.massPer = Math.max(1, Math.round(((+S.massPer || 1) + +d) * 2) / 2); redrawMass(); }, masspreset: v => { S.massPer = +v; redrawMass(); }, massper: (_, el) => { S.massPer = Math.max(1, Math.round((+el.value || 1) * 2) / 2); const ex = $('.rc-mass .exposure b'); if (ex) ex.textContent = S.selected.size * S.massPer; },
   massbid: () => massBid(), confirmmass: () => confirmMass(S.pendingMass), confirmmassvalid: () => confirmMass(S.pendingMass),
   open: id => openPlayer(+id), close: () => closeModal(),
   bid: id => openPlayer(+id),
-  reviewbid: arg => { const [id, preset] = String(arg).split('|'); const amt = preset ? +preset : Math.trunc(+$('#rc-bid-amt')?.value); const r = S.recruits.get(+id); if (!(amt >= minBidFor(r))) { toast('Bid too low', `Minimum bid is ${minBidFor(r)}${r.leader !== myTeam() && r.minRaise > 1 ? ` (bid war: the lead has changed ${r.leadChanges} times, so it takes at least +${r.minRaise} to take it)` : ''}.`, 'err', 6000); return; } if (!Number.isInteger(amt) || amt < 1) return; reviewBid(id, amt); },
-  confirmbid: arg => { const [id, amt, exp] = arg.split('|'); confirmBid(+id, +amt, +exp); },
+  reviewbid: arg => {
+    const [id, preset] = String(arg).split('|'); const r = S.recruits.get(+id); const me = myTeam();
+    const num = sel => { const v = $(sel)?.value; return v === '' || v == null ? null : +v; };
+    if (r.leader && r.leader === me) {
+      const max = preset ? +preset : num('#rc-bid-max'), minMax = myMaxFor(r) + STEP;
+      if (!isHalf(max) || max < minMax) { toast('Max too low', `Your new max must be at least ${minMax}, in steps of 0.5 points.`, 'err', 6000); return; }
+      return reviewBid(id, r.currentBid, max);
+    }
+    const amt = preset ? +preset : num('#rc-bid-amt'); const min = minBidFor(r);
+    let max = preset ? (S.lastMax >= +preset ? S.lastMax : null) : num('#rc-bid-max');
+    if (!isHalf(amt) || amt <= 0) { toast('Check your bid', 'Bids go in steps of 0.5 points.', 'err', 6000); return; }
+    if (amt < min) { toast('Bid too low', `Minimum bid is ${min}${myRaise(r) > STEP ? ` (bid war: the lead has changed ${r.leadChanges} times, so it takes at least +${myRaise(r)} to take it)` : ''}.`, 'err', 6000); return; }
+    if (max != null && (!isHalf(max) || max < amt)) { toast('Check your max', 'Your max must be at least your bid, in steps of 0.5 points.', 'err', 6000); return; }
+    reviewBid(id, amt, max ?? amt);
+  },
+  confirmbid: arg => { const [id, amt, max, exp] = arg.split('|'); confirmBid(+id, +amt, +max, +exp); },
   withdraw: async id => { if (!await ask('Withdraw your leading bid? The reservation is released and the recruit returns to no-leader.')) return; try { const out = await api(`/bids/${id}/withdraw`, { method: 'POST', body: {} }); S.me.points = out.points; upsert(out.recruit); closeModal(); toast('Bid withdrawn', '', 'info'); refreshRecruit(out.recruit.id); } catch (e) { toast('Cannot withdraw', e.message, 'err'); } },
   watch: async id => { const out = await api(`/teams/me/watchlist/${id}`, { method: 'POST', body: {} }); out.watchlisted ? S.watch.add(+id) : S.watch.delete(+id); openPlayer(+id); refreshRecruit(+id); },
   rankpos: v => { S.rankPos = v; draw(); },
@@ -949,18 +1004,29 @@ ACTIONS.settings = () => { if (isCommish() && S.view === 'admin') { const s = S.
   <div><label>Winning bid must stand (hours)</label><input id="rc-set-hours" type="number" step="0.5" min="0.25" value="${s.windowHours}"></div>
   <div><label>Clock resets on each new lead</label><select id="rc-set-rolling"><option value="1" ${s.rollingBids ? 'selected' : ''}>Yes — rolling 24h rule</option><option value="0" ${!s.rollingBids ? 'selected' : ''}>No — fixed deadline</option></select></div>
   <div><label>Portal Pool bid window (hours)</label><input id="rc-set-pool" type="number" step="0.5" min="0.25" value="${s.poolBidHours}"></div>
-  <div class="full" style="margin-top:6px"><h4 style="margin:0 0 2px">Bid-war escalator</h4><div class="rc-note">Two franchises trading +1 bids would each reset the clock for a single point. Once the lead has changed hands enough times, the minimum raise to take it grows and doubles: with the defaults, takeovers cost +1, +1, then +3, +3, +6, +6, +12 … (a leader raising its own bid is always +1).</div></div>
-  <div><label>Escalator</label><select id="rc-set-esc"><option value="1" ${s.escalationOn !== false ? 'selected' : ''}>On</option><option value="0" ${s.escalationOn === false ? 'selected' : ''}>Off (always +1)</option></select></div>
-  <div><label>Starts at lead change #</label><input id="rc-set-esc-after" type="number" min="2" max="50" value="${s.escalationAfter ?? 3}"></div>
-  <div><label>Minimum raise at that step</label><input id="rc-set-esc-base" type="number" min="1" max="1000" value="${s.escalationBase ?? 3}"></div>
-  <div><label>Doubles every N lead changes</label><input id="rc-set-esc-every" type="number" min="1" max="20" value="${s.escalationEvery ?? 2}"></div>
-  <div><label>Cap on minimum raise (0 = none)</label><input id="rc-set-esc-cap" type="number" min="0" max="100000" value="${s.escalationCap ?? 48}"></div>
+  <div class="full" style="margin-top:6px"><h4 style="margin:0 0 2px">Bid-war escalator</h4><div class="rc-note">Bids move in half points. Taking the lead needs <b>+0.5</b> for lead changes 1-4, then the raise doubles each time up to a cap by star rating. The first three teams to bid on a player always need only +0.5. Automatic max-bid raises never count as lead changes.</div>
+    <table class="rc-adm" style="margin-top:6px"><thead><tr><th>Lead change</th><th class="n">1-4</th><th class="n">5</th><th class="n">6</th><th class="n">7+</th></tr></thead><tbody>${[[5, '5★'], [4, '4★'], [3, '3★ · 2★ · 1★']].map(([st, l]) => `<tr><td>${l}</td>${[0, 4, 5, 6].map(lc => `<td class="n">+${escRaise(st, lc)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+  <div><label>Escalator</label><select id="rc-set-esc"><option value="1" ${s.escalationOn !== false ? 'selected' : ''}>On</option><option value="0" ${s.escalationOn === false ? 'selected' : ''}>Off (always +0.5)</option></select></div>
   <div><label>Player visibility</label><select id="rc-set-vis"><option value="current" ${s.visibility === 'current' ? 'selected' : ''}>Reveal round by round</option><option value="all" ${s.visibility === 'all' ? 'selected' : ''}>Show all rounds' players</option></select></div>
   <div><label>Default allocation (new teams)</label><input id="rc-set-alloc" type="number" min="0" value="${s.defaultAllocation}"></div>
   <div><label>Allow bid withdrawal</label><select id="rc-set-wd"><option value="0" ${!s.allowWithdrawal ? 'selected' : ''}>OFF (recommended)</option><option value="1" ${s.allowWithdrawal ? 'selected' : ''}>ON</option></select></div></div>
   <p class="rc-note" style="margin-top:10px">Visibility controls what coaches see on the board and in rankings: with "round by round", players from upcoming rounds stay hidden until their round opens and the pool grows as rounds complete. The commissioner always sees everything.</p>
   <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="dosettings">Save settings</button></div></div>`, 'lg'); } else nav('settings'); };
-ACTIONS.dosettings = async () => { try { await api('/admin/seasons/current', { method: 'PATCH', body: { name: $('#rc-set-name').value, windowHours: +$('#rc-set-hours').value, rollingBids: $('#rc-set-rolling').value === '1', poolBidHours: +$('#rc-set-pool').value, visibility: $('#rc-set-vis').value, defaultAllocation: +$('#rc-set-alloc').value, allowWithdrawal: $('#rc-set-wd').value === '1', escalationOn: $('#rc-set-esc').value === '1', escalationAfter: +$('#rc-set-esc-after').value, escalationBase: +$('#rc-set-esc-base').value, escalationEvery: +$('#rc-set-esc-every').value, escalationCap: +$('#rc-set-esc-cap').value } }); closeModal(); toast('✓ Recruiting settings saved', '', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } };
+ACTIONS.restartseason = () => { const s = S.state.season; if (!s) return; modal(`<div class="rc-mhead"><div><h3>Restart ${s.year} recruiting</h3><div class="m"><span>Starts the whole process over from Round 1</span></div></div><button class="x" data-rc="close">×</button></div><div class="rc-mbody">
+  <p>This deletes <b>every bid, signing and points entry</b> for ${s.year}. Every recruit goes back to the round it was imported into, every round goes back to not started, and each franchise is reset to <b>${s.defaultAllocation}</b> points.</p>
+  <p>Team logins, passwords, coach emails, watchlists and the recruit class stay. A backup of the database is saved first.</p>
+  <div class="rc-form"><div class="full"><label for="rc-reset-confirm">Type <b>RESET ${s.year}</b> to confirm</label><input id="rc-reset-confirm" autocomplete="off" spellcheck="false"></div></div><div class="rc-err" id="rc-reset-err"></div>
+  <div class="rc-mactions"><button class="rc-btn ghost" data-rc="close">Cancel</button><button class="rc-btn primary" data-rc="dorestartseason">Restart recruiting</button></div></div>`, 'sm'); };
+ACTIONS.dorestartseason = async () => {
+  const v = $('#rc-reset-confirm')?.value || '', errEl = $('#rc-reset-err');
+  try {
+    const out = await api('/admin/seasons/current/reset-bidding', { method: 'POST', body: { confirm: v } });
+    closeModal(); S.recruits = new Map(); S.feed = []; S.myBids = null; S.myMax.clear(); S.selected.clear();
+    toast('✓ Recruiting restarted', `${out.bids} bids and ${out.signings} signings cleared. Start Round 1 when you are ready.`, 'ok', 10000);
+    await loadState(); draw();
+  } catch (e) { if (errEl) errEl.textContent = e.message; else toast('Not restarted', e.message, 'err'); }
+};
+ACTIONS.dosettings = async () => { try { await api('/admin/seasons/current', { method: 'PATCH', body: { name: $('#rc-set-name').value, windowHours: +$('#rc-set-hours').value, rollingBids: $('#rc-set-rolling').value === '1', poolBidHours: +$('#rc-set-pool').value, visibility: $('#rc-set-vis').value, defaultAllocation: +$('#rc-set-alloc').value, allowWithdrawal: $('#rc-set-wd').value === '1', escalationOn: $('#rc-set-esc').value === '1' } }); closeModal(); toast('✓ Recruiting settings saved', '', 'ok'); await loadState(); draw(); } catch (e) { toast('Not saved', e.message, 'err'); } };
 window.addEventListener('error', e => { if (location.hash.startsWith('#/recruiting') && String(e.filename || '').includes('recruiting')) reportClientError(e.error || e.message, 'window'); });
 function bindLogin() { $$('[data-rc-enter]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') ACTIONS[i.dataset.rcEnter](); })); $('#rc-login-pw')?.focus(); }
 // [email] forgot/reset password + commissioner email tools (js/recruiting-email.js); a load failure never affects the rest of the module

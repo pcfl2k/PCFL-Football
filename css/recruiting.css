@@ -416,3 +416,11 @@
 .rc-overlay.rc-ask{z-index:350}
 .rc-ask-msg{white-space:pre-line}
 .rc-btn.rc-busy{opacity:.6;cursor:progress;pointer-events:none}
+
+/* max bids: bid + hidden max side by side */
+.rc-bidpair{display:flex;gap:10px;flex-wrap:wrap}
+.rc-bidpair .rc-field{flex:1 1 140px;min-width:0}
+.rc-bidpair label{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#6b7280);margin:0 0 4px}
+.rc-bidpair label span{font-weight:500;text-transform:none;letter-spacing:0;opacity:.8}
+.rc-confirm .big small{font-size:.45em;opacity:.7;margin-left:6px}
+.rc-btn.rc-danger{color:var(--red,#d6001c);border-color:currentColor}
