@@ -2126,6 +2126,8 @@ function legacyHash(hash){
   return out !== hash ? out : null;
 }
 async function route(){
+  if (window.PCFLRosterGuard && !(await window.PCFLRosterGuard())) return;   // unsaved roster changes
+  document.body.classList.remove('rm-active', 'rm-public');
   const legacy = legacyHash(location.hash);
   if (legacy) history.replaceState(null, '', legacy);
   const hash = location.hash || '#/';
@@ -2151,7 +2153,7 @@ async function route(){
   // tear down anything from the previous view (e.g., the previous team's fight song)
   stopFightSong();
   main.innerHTML = `<div class="view wrap">${html}</div>`;
-  if (isRecruitingView() && name !== 'home' && name !== 'recruiting' && name !== 'forum') {
+  if (isRecruitingView() && name !== 'home' && name !== 'recruiting' && name !== 'forum' && name !== 'league') {
     main.querySelector('.view')?.insertAdjacentHTML('afterbegin', `<div class="offseason-note"><span class="dot"></span> ${App.recruiting.year} Recruiting Period — showing final ${App.season} season data until Week 1 is played. <a href="#/recruiting">Recruitment Center →</a></div>`);
   }
   document.title = `PCFL Network — ${name === 'home' ? (isRecruitingView() ? `${App.recruiting.year} Recruiting Period` : `Week ${App.week}, ${App.season} Season`) : name[0].toUpperCase()+name.slice(1)}`;
@@ -2159,6 +2161,8 @@ async function route(){
   main.querySelectorAll('[data-count]').forEach(n => countUp(n, +n.dataset.count));
   setupFightSong();
   hydrateCoachSlots(main);
+  if (name === 'teams' && parts[1]) mountRosterManager(parts[1], main);
+  if (name === 'league') mountLeaguePage(main);
   window.scrollTo({ top: 0 });
 }
 
@@ -2330,6 +2334,20 @@ VIEWS.forum = async function(sub, id, third, q){
   }
 };
 
+/* ------------------------- roster management ------------------------- */
+/* Signed-in coaches manage their own team on its page (js/roster-manager.js). Loaded lazily and
+   only with a sign-in; if it is unavailable, the page keeps the read-only roster. */
+const rosterModule = () => import(new URL('js/roster-manager.js?v=__BUILD__', document.baseURI).href);
+async function mountRosterManager(slug, main){
+  if (!coachTokenNow()) return;
+  try { (await rosterModule()).mount({ slug, main }); } catch (e) { console.warn('roster management unavailable', e); }
+}
+VIEWS.league = async function(){ return '<div id="league-admin" style="padding:20px 0">Loading…</div>'; };
+async function mountLeaguePage(main){
+  try { (await rosterModule()).mountAdmin(main.querySelector('#league-admin')); }
+  catch (e) { console.error('league page failed to load', e); main.querySelector('#league-admin').textContent = 'The league page could not be loaded.'; }
+}
+
 /* ============================= boot ============================== */
 /* ---- Freshness guard -------------------------------------------------------
    GitHub Pages serves every file with max-age=600, and this is a single-page app
@@ -2348,7 +2366,7 @@ async function checkBuild(reason){
   let already = null; try { already = sessionStorage.getItem(key); } catch {}
   const refresh = () => { try { sessionStorage.setItem(key, v.build); } catch {} location.replace(`${location.pathname}?b=${encodeURIComponent(v.build)}${location.hash}`); };
   // arriving on a cached page, or idle on a read-only page: just get the new build (once per build id)
-  if (already !== v.build && (reason === 'boot' || !/^#\/(recruiting|forum)/.test(location.hash))) return refresh();   // never reload under someone bidding or typing a post
+  if (already !== v.build && (reason === 'boot' || !/^#\/(recruiting|forum)/.test(location.hash)) && !window.PCFLRosterDirty?.()) return refresh();   // never reload under someone bidding, typing a post or editing a roster
   if (document.getElementById('update-bar')) return;
   document.body.insertAdjacentHTML('beforeend', `<div id="update-bar" class="update-bar"><span>PCFL Network has been updated.</span><button type="button">Refresh now</button></div>`);
   document.querySelector('#update-bar button').addEventListener('click', refresh);
