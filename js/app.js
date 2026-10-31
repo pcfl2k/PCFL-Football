@@ -2151,7 +2151,7 @@ async function route(){
   // tear down anything from the previous view (e.g., the previous team's fight song)
   stopFightSong();
   main.innerHTML = `<div class="view wrap">${html}</div>`;
-  if (isRecruitingView() && name !== 'home' && name !== 'recruiting') {
+  if (isRecruitingView() && name !== 'home' && name !== 'recruiting' && name !== 'forum') {
     main.querySelector('.view')?.insertAdjacentHTML('afterbegin', `<div class="offseason-note"><span class="dot"></span> ${App.recruiting.year} Recruiting Period — showing final ${App.season} season data until Week 1 is played. <a href="#/recruiting">Recruitment Center →</a></div>`);
   }
   document.title = `PCFL Network — ${name === 'home' ? (isRecruitingView() ? `${App.recruiting.year} Recruiting Period` : `Week ${App.week}, ${App.season} Season`) : name[0].toUpperCase()+name.slice(1)}`;
@@ -2317,6 +2317,19 @@ VIEWS.recruiting = async function(sub, id, _, q){
   }
 };
 
+/* ------------------------------ forum ------------------------------ */
+/* Coaches-only message board (js/forum.js). Loaded lazily like recruiting: if the module or
+   its service is unavailable, only this route shows a message. */
+VIEWS.forum = async function(sub, id, third, q){
+  try {
+    const mod = await import(new URL('js/forum.js?v=__BUILD__', document.baseURI).href);
+    return mod.render({ App, T, logo, esc, sub, id: id, third, q });
+  } catch (e) {
+    console.error('forum module failed to load', e);
+    return `<div class="empty card" style="margin-top:30px"><b>Forum unavailable</b>The forum could not be loaded. ${esc(e.message)}</div>`;
+  }
+};
+
 /* ============================= boot ============================== */
 /* ---- Freshness guard -------------------------------------------------------
    GitHub Pages serves every file with max-age=600, and this is a single-page app
@@ -2335,7 +2348,7 @@ async function checkBuild(reason){
   let already = null; try { already = sessionStorage.getItem(key); } catch {}
   const refresh = () => { try { sessionStorage.setItem(key, v.build); } catch {} location.replace(`${location.pathname}?b=${encodeURIComponent(v.build)}${location.hash}`); };
   // arriving on a cached page, or idle on a read-only page: just get the new build (once per build id)
-  if (already !== v.build && (reason === 'boot' || !location.hash.startsWith('#/recruiting'))) return refresh();
+  if (already !== v.build && (reason === 'boot' || !/^#\/(recruiting|forum)/.test(location.hash))) return refresh();   // never reload under someone bidding or typing a post
   if (document.getElementById('update-bar')) return;
   document.body.insertAdjacentHTML('beforeend', `<div id="update-bar" class="update-bar"><span>PCFL Network has been updated.</span><button type="button">Refresh now</button></div>`);
   document.querySelector('#update-bar button').addEventListener('click', refresh);
