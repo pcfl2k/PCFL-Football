@@ -96,7 +96,7 @@ function moveTo(from, to) {
     row.splice(b, 0, row.splice(a, 1)[0]);
     l.forEach((k, i) => { S.layout[k] = row[i]; });
   } else {
-    if (q && !slotAccepts(from, q.pos)) return toast('Not a legal move', `${q.pos} ${q.last} cannot go to the ${slotLabel(from)} slot, so the two cannot swap. Move him to Out first.`, 'err');
+    if (q && !slotAccepts(from, q.pos)) return toast('Not a legal move', `${q.pos} ${q.last} cannot go to the ${slotLabel(from)} slot, so the two cannot swap. Move that player to Out first.`, 'err');
     S.layout[to] = p; S.layout[from] = q || null;
   }
   S.selected = S.layout.indexOf(p);
@@ -109,7 +109,7 @@ function setStatus(slot, section) {
   if (k < 0) {
     const s = SECTIONS[section], g = groupOf(p.pos);
     render();
-    return toast(`${s.label} is full`, section === 'A' ? `All ${g.count} ${g.label} slots are taken. Drag him onto the player he should replace.` : `${s.label} is at its limit of ${s.count}. Move someone out first.`, 'err');
+    return toast(`${s.label} is full`, section === 'A' ? `All ${g.count} ${g.label} slots are taken. Drag this player onto the one to replace.` : `${s.label} is at its limit of ${s.count}. Move someone out first.`, 'err');
   }
   S.layout[k] = p; S.layout[slot] = null; S.selected = k;
   render();
@@ -117,8 +117,8 @@ function setStatus(slot, section) {
 async function release(slot) {
   const p = S.layout[slot];
   if (!p) return;
-  if (p.incoming) { render(); return toast('Not on the roster yet', `${p.name || p.last} has to reach the roster on Update before he can be released.`, 'err'); }
-  const yes = await dialog('Release this player?', `Release ${p.pos} ${p.first} ${p.last} (#${p.jersey}) from ${S.view.team.name}? When you press Update he goes to the Transfer Portal, a post goes up in the forum, and other teams can sign him. This cannot be undone.`, [{ label: 'Keep him', value: false }, { label: 'Release player', value: true, cls: 'primary' }]);
+  if (p.incoming) { render(); return toast('Not on the roster yet', `${p.name || p.last} has to reach the roster on Update before being released.`, 'err'); }
+  const yes = await dialog('Release this player?', `Release ${p.pos} ${p.first} ${p.last} (#${p.jersey}) from ${S.view.team.name}? When you press Update this player goes to the Transfer Portal, a post goes up in the forum, and other teams can sign this player. This cannot be undone.`, [{ label: 'Keep player', value: false }, { label: 'Release player', value: true, cls: 'primary' }]);
   if (!yes) return render();
   S.released.set(p.id, p); S.layout[slot] = null; S.selected = null;
   seatWaiting();
@@ -131,7 +131,7 @@ function undoRelease(id) {
   if (k < 0) {
     for (let i = TOTAL_SLOTS - 1; i >= 0 && k < 0; i--) if (S.layout[i]?.incoming) { S.layout[i] = null; k = placementFor(S.layout, p.pos); }
   }
-  if (k < 0) { S.released.set(id, p); return toast('No room to bring him back', 'Move someone out first.', 'err'); }
+  if (k < 0) { S.released.set(id, p); return toast('No room to bring this player back', 'Move someone out first.', 'err'); }
   S.layout[k] = p; S.selected = k;
   render();
 }
@@ -212,7 +212,7 @@ function boardHTML(editable) {
 }
 function cardHTML(editable) {
   const k = S.selected, p = k == null ? null : S.layout[k];
-  if (!p) return `<div class="rm-card-empty"><b>Select a player</b><span>Pick a row to edit his name, number and status. Drag the handle to change the depth chart.</span></div>`;
+  if (!p) return `<div class="rm-card-empty"><b>Select a player</b><span>Pick a row to edit the name, number and status. Drag the handle to change the depth chart.</span></div>`;
   const nums = [...new Set([p.jersey, ...availableNumbers(S.layout, p.pos, p.id)])].filter(Boolean).sort((a, b) => a - b);
   const lock = !editable || p.incoming ? 'disabled' : '', nameLock = !editable || !S.view.settings.namesOpen || p.incoming ? 'disabled' : '';
   const g = groupOf(p.pos);
