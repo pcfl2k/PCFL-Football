@@ -251,7 +251,7 @@ function render() {
       </div>
     </div>
     <div class="rm-counts">${chip('A', 'Active')}${chip('O', 'Out')}${chip('I', 'Inactive')}${chip('IR', 'IR / Practice Squad')}<span class="rm-chip total"><b>${v.counts.total}/${TOTAL_SLOTS}</b>Total</span><span class="rm-legal ${v.legal ? 'ok' : 'bad'}">${v.legal ? (v.gameReady ? 'Legal and game ready' : 'Legal so far') : 'Not legal yet'}</span></div>
-    ${waiting.length ? `<div class="rm-msg warn"><b>${waiting.length} signed ${waiting.length === 1 ? 'player is' : 'players are'} waiting for a roster spot.</b> Your roster is full, so release a player to make room. Until then you cannot bid on anyone else. <span>${waiting.map(p => `${esc(p.pos)} ${esc(p.name)}`).join(', ')}</span></div>` : ''}
+    ${waiting.length ? `<div class="rm-msg warn"><b>${waiting.length} signed ${waiting.length === 1 ? 'player needs' : 'players need'} a roster spot.</b> Release ${waiting.length === 1 ? 'a player' : `${waiting.length} players`} to sign ${waiting.length === 1 ? 'this player' : 'them'}. Each release signs the next player won when you press Update. <span>${waiting.map(p => `${esc(p.pos)} ${esc(p.name)}`).join(', ')}</span></div>` : ''}
     ${errors.length ? `<div class="rm-msg bad"><b>Fix before you can press Update:</b><ul>${errors.map(e => `<li>${esc(e.message)}</li>`).join('')}</ul></div>` : ''}
     ${v.warnings.length ? `<div class="rm-msg note"><ul>${v.warnings.map(e => `<li>${esc(e.message)}</li>`).join('')}</ul></div>` : ''}
     ${released.length ? `<div class="rm-msg rel"><b>Released on Update:</b> ${released.map(p => `<span>${esc(p.pos)} ${esc(p.first)} ${esc(p.last)} <button class="fm-link" data-unrelease="${p.id}">Undo</button></span>`).join(' ')}</div>` : ''}
@@ -404,7 +404,7 @@ export async function mountAdmin(el) {
         ${toggle('allowNames', 'Allow name changes', 'Only once all recruiting has finished')}
         ${toggle('allowPositions', 'Allow position changes', 'Inside a position group, such as DE to DT')}
         ${toggle('locked', 'Lock roster moves', 'While you run a week. You can still edit.')}
-        ${toggle('bidGate', 'Block bids when a roster is full', 'Coaches must release a player first')}
+        ${toggle('bidGate', 'Block bids when a roster is full', 'Off: teams can bid at the limit and cut a player for each win')}
         <label class="rm-toggle"><input type="checkbox" data-strict ${o.settings.strict === 'on' ? 'checked' : ''}><span><b>Require all 46 now</b><small>${o.recruitingDone ? 'Recruiting is finished, so this already applies.' : 'Otherwise this starts when recruiting finishes.'}</small></span></label>
       </div>
       <div class="card rs-card"><div class="rs-scroll"><table class="rm-table"><thead><tr><th>Team</th><th class="rm-c">Active</th><th class="rm-c">Out</th><th class="rm-c">Inactive</th><th class="rm-c">IR/PS</th><th class="rm-c">Total</th><th class="rm-c">Waiting</th><th>Status</th><th>Last update</th></tr></thead><tbody>${o.teams.map(teamRow).join('')}</tbody></table></div></div>
